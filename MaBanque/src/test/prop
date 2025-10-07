@@ -1,0 +1,31 @@
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+
+class CrmPropertiesTest {
+
+    @Test
+    fun `should correctly store all properties`() {
+        // GIVEN
+        val url = "https://crm.example.com"
+        val clientId = "test-client-id"
+        val clientSecret = "test-secret"
+        val grantType = "client_credentials"
+        val tokenUrl = "https://crm.example.com/token"
+
+        // WHEN
+        val properties = CrmProperties(
+            url = url,
+            clientId = clientId,
+            clientSecret = clientSecret,
+            grantType = grantType,
+            tokenUrl = tokenUrl
+        )
+
+        // THEN
+        assertEquals(url, properties.url)
+        assertEquals(clientId, properties.clientId)
+        assertEquals(clientSecret, properties.clientSecret)
+        assertEquals(grantType, properties.grantType)
+        assertEquals(tokenUrl, properties.tokenUrl)
+    }
+}
