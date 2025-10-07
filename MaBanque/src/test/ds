@@ -1,0 +1,120 @@
+import io.mockk.*
+import io.mockk.impl.annotations.MockK
+import org.junit.jupiter.api.*
+import org.junit.jupiter.api.Assertions.*
+import okhttp3.ResponseBody
+import okhttp3.Response
+import okhttp3.Request
+import java.io.IOException
+
+class CrmCustomerProviderAdapterTest {
+
+    @MockK
+    private lateinit var crmClient: CrmClient
+
+    private lateinit var crmCustomerProviderAdapter: CrmCustomerProviderAdapter
+
+    @BeforeEach
+    fun setup() {
+        MockKAnnotations.init(this)
+        crmCustomerProviderAdapter = CrmCustomerProviderAdapter(crmClient)
+    }
+
+    @Nested
+    inner class CreateCrmCustomerTests {
+
+        @Test
+        fun `should create CRM customer successfully`() {
+            // GIVEN
+            val crmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true)
+            val crmCustomerRequest = mockk<CrmCustomerRequest>(relaxed = true)
+            val crmResponse = mockk<CrmCustomerResponse>(relaxed = true) {
+                every { accountId } returns "ACC123"
+            }
+            val okHttpResponse = mockk<Response>(relaxed = true) {
+                every { isSuccessful } returns true
+                every { body() } returns crmResponse
+            }
+
+            every { crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = false) } returns crmCustomerRequest
+            every { crmClient.createCustomer(any(), any()) } returns okHttpResponse
+            every { crmResponse.toDomain() } returns CrmCustomerResponsePayload(
+                crmStatus = RecordStepStatus.OK,
+                crmAccountId = "ACC123"
+            )
+
+            // WHEN
+            val result = crmCustomerProviderAdapter.createCrmCustomer(crmClsCustomerData)
+
+            // THEN
+            assertEquals(RecordStepStatus.OK, result.crmStatus)
+            assertEquals("ACC123", result.crmAccountId)
+            verify(exactly = 1) { crmClient.createCustomer(crmCustomerRequest.correlationId, crmCustomerRequest.data) }
+        }
+
+        @Test
+        fun `should handle CRM API error response`() {
+            // GIVEN
+            val crmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true)
+            val crmCustomerRequest = mockk<CrmCustomerRequest>(relaxed = true)
+            val errorResponseBody = mockk<ResponseBody>(relaxed = true)
+            val okHttpResponse = mockk<Response>(relaxed = true) {
+                every { isSuccessful } returns false
+                every { errorBody() } returns errorResponseBody
+            }
+
+            every { crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = false) } returns crmCustomerRequest
+            every { crmClient.createCustomer(any(), any()) } returns okHttpResponse
+            every { errorResponseBody.charStream() } returns java.io.StringReader("API Error")
+
+            // WHEN
+            val result = crmCustomerProviderAdapter.createCrmCustomer(crmClsCustomerData)
+
+            // THEN
+            assertEquals(RecordStepStatus.KO, result.crmStatus)
+            assertTrue(result.crmMessage!!.contains("Could not get response from CRM B2C API"))
+            assertNull(result.crmAccountId)
+        }
+
+        @Test
+        fun `should handle empty response body`() {
+            // GIVEN
+            val crmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true)
+            val crmCustomerRequest = mockk<CrmCustomerRequest>(relaxed = true)
+            val okHttpResponse = mockk<Response>(relaxed = true) {
+                every { isSuccessful } returns true
+                every { body() } returns null
+            }
+
+            every { crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = false) } returns crmCustomerRequest
+            every { crmClient.createCustomer(any(), any()) } returns okHttpResponse
+
+            // WHEN
+            val result = crmCustomerProviderAdapter.createCrmCustomer(crmClsCustomerData)
+
+            // THEN
+            assertEquals(RecordStepStatus.KO, result.crmStatus)
+            assertTrue(result.crmMessage!!.contains("empty body"))
+            assertNull(result.crmAccountId)
+        }
+
+        @Test
+        fun `should handle exception during CRM call`() {
+            // GIVEN
+            val crmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true)
+            val crmCustomerRequest = mockk<CrmCustomerRequest>(relaxed = true)
+
+            every { crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = false) } returns crmCustomerRequest
+            every { crmClient.createCustomer(any(), any()) } throws IOException("Network error")
+
+            // WHEN
+            val result = crmCustomerProviderAdapter.createCrmCustomer(crmClsCustomerData)
+
+            // THEN
+            assertEquals(RecordStepStatus.KO, result.crmStatus)
+            assertTrue(result.crmMessage!!.contains("BLM Exception"))
+            assertTrue(result.crmMessage!!.contains("Network error"))
+            assertNull(result.crmAccountId)
+        }
+    }
+}
