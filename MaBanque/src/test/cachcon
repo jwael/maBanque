@@ -1,0 +1,40 @@
+package com.arval.blm.infrastructure.config
+
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.springframework.cache.CacheManager
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class CachingConfigTest {
+
+    private lateinit var config: CachingConfig
+    private lateinit var cacheManager: CacheManager
+
+    @BeforeEach
+    fun setUp() {
+        config = CachingConfig()
+        cacheManager = config.cacheManager()
+    }
+
+    @Test
+    fun `should create a ConcurrentMapCacheManager`() {
+        assertTrue(cacheManager is ConcurrentMapCacheManager)
+    }
+
+    @Test
+    fun `should define correct cache names`() {
+        val cacheNames = cacheManager.cacheNames
+        assertTrue(cacheNames.contains("customer_policy"))
+        assertTrue(cacheNames.contains("loader_batches"))
+        assertEquals(2, cacheNames.size)
+    }
+
+    @Test
+    fun `should return non-null cache instances`() {
+        assertNotNull(cacheManager.getCache("customer_policy"))
+        assertNotNull(cacheManager.getCache("loader_batches"))
+    }
+}
