@@ -1,0 +1,118 @@
+package com.arval.blm.infrastructure.driven.apigee.crm.config
+
+import okhttp3.Interceptor
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.Route
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+// DTO Java ou Retrofit
+data class AuthResponse(
+    @JvmField val accessToken: String,
+    @JvmField val expiresIn: String,
+    @JvmField val tokenType: String
+)
+
+// Interface Retrofit
+interface OAuth2ProviderClient {
+    fun getAuthenticationToken(clientId: String, clientSecret: String, grantType: String): retrofit2.Call<AuthResponse>
+}
+
+// Classe à tester
+class OAuth2Authenticator(
+    private val crmProperties: CrmProperties,
+    private val oAuth2ProviderClient: OAuth2ProviderClient
+) : okhttp3.Authenticator {
+
+    var token: String? = null
+        private set
+
+    override fun authenticate(route: Route?, response: Response): Request {
+        val call = oAuth2ProviderClient.getAuthenticationToken(
+            crmProperties.clientId,
+            crmProperties.clientSecret,
+            crmProperties.grantType
+        )
+
+        val tokenResponse = call.execute().body() ?: throw IllegalStateException("Token body was empty")
+        token = tokenResponse.accessToken
+
+        return response.request.newBuilder()
+            .header("Authorization", "${tokenResponse.tokenType} ${tokenResponse.accessToken}")
+            .build()
+    }
+}
+
+// Interceptor à tester
+class OAuth2Interceptor(private val oAuth2Authenticator: OAuth2Authenticator) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val authenticatedRequest = oAuth2Authenticator.token?.let {
+            request.newBuilder().header("Authorization", "Bearer $it").build()
+        } ?: request
+        return chain.proceed(authenticatedRequest)
+    }
+}
+
+// Test class
+class OAuth2AuthenticatorTest {
+
+    private val oAuth2ProviderClient: OAuth2ProviderClient = mockk()
+    private val crmProperties = CrmProperties("url", "clientId", "clientSecret", "grantType", "tokenUrl")
+    private lateinit var authenticator: OAuth2Authenticator
+
+    @BeforeEach
+    fun setup() {
+        authenticator = OAuth2Authenticator(crmProperties, oAuth2ProviderClient)
+    }
+
+    @Test
+    fun `should authenticate and set token`() {
+        val fakeResponse = AuthResponse("ACCESS123", "3600", "Bearer")
+        val callMock = mockk<retrofit2.Call<AuthResponse>>()
+        every { callMock.execute() } returns retrofit2.Response.success(fakeResponse)
+        every { oAuth2ProviderClient.getAuthenticationToken(any(), any(), any()) } returns callMock
+
+        val requestMock = mockk<Request>(relaxed = true)
+        val responseMock = mockk<Response>(relaxed = true) {
+            every { request } returns requestMock
+        }
+
+        val newRequest = authenticator.authenticate(null, responseMock)
+        assertEquals("ACCESS123", authenticator.token)
+        verify { oAuth2ProviderClient.getAuthenticationToken(any(), any(), any()) }
+        verify { callMock.execute() }
+    }
+
+    @Test
+    fun `OAuth2Interceptor should add Authorization header when token is set`() {
+        authenticator.token = "ACCESS123"
+        val interceptor = OAuth2Interceptor(authenticator)
+
+        val chain = mockk<Interceptor.Chain>()
+        val originalRequest = Request.Builder().url("http://localhost").build()
+        every { chain.request() } returns originalRequest
+        every { chain.proceed(any()) } answers { firstArg() as Response }
+
+        val response = interceptor.intercept(chain)
+        verify { chain.proceed(match { it.header("Authorization") == "Bearer ACCESS123" }) }
+    }
+
+    @Test
+    fun `OAuth2Interceptor should not add Authorization header when token is null`() {
+        authenticator.token = null
+        val interceptor = OAuth2Interceptor(authenticator)
+
+        val chain = mockk<Interceptor.Chain>()
+        val originalRequest = Request.Builder().url("http://localhost").build()
+        every { chain.request() } returns originalRequest
+        every { chain.proceed(any()) } answers { firstArg() as Response }
+
+        interceptor.intercept(chain)
+        verify { chain.proceed(match { it.header("Authorization") == null }) }
+    }
+}
