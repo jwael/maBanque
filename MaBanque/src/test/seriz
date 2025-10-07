@@ -1,0 +1,67 @@
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import org.junit.jupiter.api.Test
+import java.time.LocalDate
+import kotlin.test.assertEquals
+
+class ClEpartnerCustomerKafkaMessageSerializationTest {
+
+    private val objectMapper: ObjectMapper = jacksonObjectMapper()
+        .registerModule(JavaTimeModule()) // <<< clé pour LocalDate/LocalDateTime
+        .findAndRegisterModules() // optionnel, enregistre d’autres modules si nécessaire
+
+    @Test
+    fun `should serialize and deserialize ClEpartnerCustomerKafkaMessage`() {
+        val message = ClEpartnerCustomerKafkaMessage(
+            mainCountry = "DE",
+            persAcctPartnerNetwork = "PAL001",
+            persAcctSalutation = "Mr",
+            persAcctFirstName = "Max",
+            persAcctLastName = "Mustermann",
+            persAcctGender = "M",
+            persAcctIdentificationNumber = "ID123",
+            persAcctType = "Business",
+            persAcctBirthDate = LocalDate.of(1990, 1, 1),
+            persAcctPersonalLandlinePhone = "0123456789",
+            persAcctPersonalEmail = "max@example.com",
+            persAcctPersonalAddressStreet = "Street 1",
+            persAcctPersonalAddressPostalCode = "12345",
+            persAcctPersonalAddressCountry = "DE",
+            persAcctPersonalAddressCity = "Berlin",
+            persAcctPersonalAddressState = "Berlin",
+            persAcctPersonalAddressStreetNumber = "1",
+            cLsTaxRegistrationNumber = "TAX001",
+            clsForeignCompany = null,
+            clsFuelDepositRequired = "Yes",
+            clsDateEstablished = LocalDate.of(2000, 1, 1),
+            clsOwnerCompanyCode = "OWN001",
+            clOwnerCompanyType = "Private",
+            clsVatInvoiceFrequency = "Monthly",
+            clsCreditLimitExpiryDate = LocalDate.of(2025, 12, 31),
+            clsCreditLineId = 1,
+            clsCostCentre = "CC001",
+            clsDecisionId = 1,
+            clsAuthOutLimitAmount = 1000,
+            clsQuoteId = 123,
+            clsQuoteRevision = 1,
+            clsBasReference = "BAS001",
+            persAcctPartnerBranchCode = "BR001",
+            partnerAccountId = "PA001",
+            clsGroupCode = "GRP001",
+            clsInvoicePolicyCode = "INV001",
+            clsSalesSubLedger = "SUB001",
+            clsAdvanceInvoice = "AI001",
+            roleCode = "Driver"
+        )
+
+        // Serialize
+        val json = objectMapper.writeValueAsString(message)
+
+        // Deserialize
+        val deserialized = objectMapper.readValue(json, ClEpartnerCustomerKafkaMessage::class.java)
+
+        // Assert
+        assertEquals(message, deserialized)
+    }
+}
