@@ -1,0 +1,112 @@
+package com.arval.blm.infrastructure.driving.rest.contact
+
+import com.arval.blm.application.api.ImportContactUseCaseApi
+import com.arval.blm.domain.model.valueobjects.CountryCode
+import com.arval.blm.infrastructure.configuration.properties.BlmImportAuthorizationProperties
+import com.arval.blm.infrastructure.driving.rest.dto.BatchReferenceDto
+import com.arval.blm.infrastructure.driving.rest.exception.ForbiddenException
+import com.arval.blm.infrastructure.driving.rest.parser.ContactsCsvParser
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import org.mockito.kotlin.*
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
+import org.springframework.boot.test.mock.mockito.MockBean
+import org.springframework.http.MediaType
+import org.springframework.mock.web.MockMultipartFile
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
+import java.net.URI
+
+@WebMvcTest(ContactImportController::class)
+class ContactImportControllerTest {
+
+    @Autowired
+    private lateinit var mockMvc: MockMvc
+
+    @MockBean
+    private lateinit var importContactUseCaseApi: ImportContactUseCaseApi
+
+    @MockBean
+    private lateinit var blmAccessAuthorization: BlmImportAuthorizationProperties
+
+    @Test
+    fun `should return 201 Created when import succeeds`() {
+        // GIVEN
+        val file = MockMultipartFile(
+            "file",
+            "contacts.csv",
+            "text/csv",
+            "id,name\n1,John".toByteArray()
+        )
+
+        whenever(importContactUseCaseApi.invoke(
+            any(), any(), any(), any()
+        )).thenReturn(mock { on { value } doReturn "BATCH123" })
+
+        whenever(blmAccessAuthorization.enabled).thenReturn(false)
+
+        // WHEN / THEN
+        mockMvc.perform(
+            MockMvcRequestBuilders.multipart("/api/v1/contacts/import")
+                .file(file)
+                .param("userCountry", "FR")
+                .param("userUid", "USER123")
+                .param("customCountry", "")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+        )
+            .andExpect(status().isCreated)
+            .andExpect(header().string("Location", "/api/v1/batches/BATCH123/import-overview"))
+            .andExpect(jsonPath("$.batchReference").value("BATCH123"))
+
+        verify(importContactUseCaseApi, times(1)).invoke(
+            any(), eq(CountryCode("FR")), eq("contacts.csv"), eq("USER123")
+        )
+    }
+
+    @Test
+    fun `should throw ForbiddenException when user lacks permission`() {
+        // GIVEN
+        val file = MockMultipartFile("file", "contacts.csv", "text/csv", "dummy".toByteArray())
+        whenever(blmAccessAuthorization.enabled).thenReturn(true)
+
+        // WHEN / THEN
+        assertThrows<ForbiddenException> {
+            ContactImportController(
+                importContactUseCaseApi,
+                customCountryFeatureActivated = true,
+                blmAccessAuthorization = blmAccessAuthorization
+            ).importFile(
+                file = file,
+                customCountry = "FR",
+                userCountry = "FR",
+                userUid = "U123",
+                userRoles = listOf("B2B_FILE_IMPORT")
+            )
+        }
+    }
+
+    @Test
+    fun `should return 400 when file is not CSV`() {
+        // GIVEN
+        val file = MockMultipartFile(
+            "file",
+            "contacts.txt",
+            "text/plain",
+            "not csv".toByteArray()
+        )
+
+        whenever(blmAccessAuthorization.enabled).thenReturn(false)
+
+        // WHEN / THEN
+        mockMvc.perform(
+            MockMvcRequestBuilders.multipart("/api/v1/contacts/import")
+                .file(file)
+                .param("userCountry", "FR")
+                .param("userUid", "USER123")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+        )
+            .andExpect(status().isBadRequest)
+    }
+}
