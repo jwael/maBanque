@@ -1,0 +1,65 @@
+package com.arval.blm.infrastructure.driven.apigee.crm.config
+
+import okhttp3.Interceptor
+import okhttp3.Request
+import okhttp3.Response
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+
+class OAuth2InterceptorTest {
+
+    private val oAuth2Authenticator: OAuth2Authenticator = mockk()
+    private lateinit var interceptor: OAuth2Interceptor
+
+    @BeforeEach
+    fun setup() {
+        interceptor = OAuth2Interceptor(oAuth2Authenticator)
+    }
+
+    @Test
+    fun `should not add Authorization header when token is null`() {
+        // GIVEN
+        val request = Request.Builder()
+            .url("https://example.com")
+            .build()
+        val chain = mockk<Interceptor.Chain>()
+        val fakeResponse = mockk<Response>(relaxed = true)
+
+        every { chain.request() } returns request
+        every { chain.proceed(any()) } returns fakeResponse
+        every { oAuth2Authenticator.token } returns null
+
+        // WHEN
+        val response = interceptor.intercept(chain)
+
+        // THEN
+        assertEquals(null, response.request.header("Authorization"))
+        verify { chain.proceed(match { it.header("Authorization") == null }) }
+    }
+
+    @Test
+    fun `should add Authorization header when token is present`() {
+        // GIVEN
+        val tokenValue = "mockedToken"
+        val tokenType = "Bearer"
+        val request = Request.Builder()
+            .url("https://example.com")
+            .build()
+        val chain = mockk<Interceptor.Chain>()
+        val fakeResponse = mockk<Response>(relaxed = true)
+
+        every { chain.request() } returns request
+        every { chain.proceed(any()) } returns fakeResponse
+        every { oAuth2Authenticator.token } returns tokenValue
+
+        // WHEN
+        val response = interceptor.intercept(chain)
+
+        // THEN
+        assertEquals("$tokenValue", oAuth2Authenticator.token)
+        verify { chain.proceed(match { it.header("Authorization") == "Bearer $tokenValue" }) }
+        assertEquals(fakeResponse, response)
+    }
+}
