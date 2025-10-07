@@ -1,0 +1,38 @@
+"PAL402" to "COMPARTIDOS MID CE"
+
+
+"PAL403" to "COMPARTIDOS MID CORP",
+
+
+"PAL408" to "Amazon logistics",
+
+
+"PAL409" to "Réseau APOGEES"
+"PAL410" to
+
+"CM-CIC"
+"PAL411" to
+
+"SYNEHA",
+"PAL433" to
+
+"TOYOTA",
+"PAL434" to
+
+"DEALERS GR",
+"PAL435"
+to
+"EUROBANK"
+"PAL436"
+to
+"COSMOS",
+"PAL437"
+to
+
+"PAL438" to
+
+"MERCURIAL",
+
+
+"PAL439" to "La Bangue Postale"
+return partnerNetworkMapping[input] ?: input
