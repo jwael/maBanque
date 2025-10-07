@@ -12,6 +12,57 @@ import retrofit2.Response
 
 class CrmCustomerProviderAdapterTest {
 
+@Test
+fun `should return successful CrmCustomerResponsePayload when CRM update is successful`() {
+    // GIVEN
+    val crmClsCustomerData = CrmClsCustomerData(
+        batchId = "BATCH_001",
+        reconciliationId = ReconciliationId(ReferenceId("REF_BATCH"), ReferenceId("REF_ROW")),
+        rowNumber = 1,
+        rowReference = ReferenceId("REF_ROW"),
+        crmData = CrmData(
+            title = "Dr.",
+            salutation = "Dr.",
+            prefLanguageComm = "French",
+            gender = "Male",
+            contactRole = "Driver",
+            country = "GB",
+            mainCountry = "GB",
+            salesforceAccountId = "SF_123" // Nécessaire pour update
+        ),
+        clsData = emptyMap(),
+        crmInsertedId = null
+    )
+
+    val crmRequest = mockk<CrmCustomerRequest>(relaxed = true)
+    val crmResponseBody = mockk<CrmCustomerResponse>(relaxed = true)
+
+    val crmResponse = mockk<Response<CrmCustomerResponse>> {
+        every { isSuccessful } returns true
+        every { body() } returns crmResponseBody
+    }
+
+    mockkStatic("com.arval.blm.core.domain.model.CrmClsCustomerDataKt")
+    every { crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = true) } returns crmRequest
+    every { crmClient.updateCustomer(any(), any(), any()) } returns crmResponse
+    every { crmResponseBody.toDomain() } returns CrmCustomerResponsePayload(
+        crmStatus = RecordStepStatus.OK,
+        crmMessage = "Customer updated successfully",
+        crmAccountId = "SF_123",
+        crmRoleId = null
+    )
+
+    // WHEN
+    val result = adapter.updateCrmCustomer(crmClsCustomerData)
+
+    // THEN
+    assertNotNull(result)
+    assertEquals(RecordStepStatus.OK, result.crmStatus)
+    assertEquals("Customer updated successfully", result.crmMessage)
+    assertEquals("SF_123", result.crmAccountId)
+    verify { crmClient.updateCustomer(any(), any(), any()) }
+}
+
     private val crmClient: CrmClient = mockk()
     private lateinit var adapter: CrmCustomerProviderAdapter
 
