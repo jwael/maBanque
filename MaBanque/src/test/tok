@@ -1,0 +1,71 @@
+import com.github.dockerjava.api.model.AuthResponse
+import io.mockk.*
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.Route
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import retrofit2.Call
+import retrofit2.Response as RetrofitResponse
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+
+class OAuth2AuthenticatorTest {
+
+    private lateinit var oAuth2ProviderClient: OAuth2ProviderClient
+    private lateinit var crmProperties: CrmProperties
+    private lateinit var authenticator: OAuth2Authenticator
+
+    @BeforeEach
+    fun setup() {
+        oAuth2ProviderClient = mockk()
+        crmProperties = CrmProperties(
+            url = "https://fake-crm.com",
+            clientId = "client-id",
+            clientSecret = "client-secret",
+            grantType = "client_credentials",
+            tokenUrl = "https://fake-crm.com/token"
+        )
+        authenticator = OAuth2Authenticator(crmProperties, oAuth2ProviderClient)
+    }
+
+    @Test
+    fun `should throw exception when token retrieval fails`() {
+        // GIVEN
+        val fakeCall = mockk<Call<AuthResponse>>()
+        every { fakeCall.execute() } returns RetrofitResponse.success(null)
+        every { oAuth2ProviderClient.getAuthenticationToken(any(), any(), any()) } returns fakeCall
+
+        val request = Request.Builder().url("https://example.com").build()
+        val response = mockk<Response>(relaxed = true)
+
+        // THEN
+        assertFailsWith<IllegalStateException> {
+            authenticator.authenticate(route = null, response = response)
+        }
+    }
+
+    @Test
+    fun `should return request with Authorization header when token is retrieved`() {
+        // GIVEN
+        val tokenResponse = AuthResponse(
+            accessToken = "ACCESS123",
+            tokenType = "Bearer",
+            expiresIn = 3600
+        )
+        val fakeCall = mockk<Call<AuthResponse>>()
+        every { fakeCall.execute() } returns RetrofitResponse.success(tokenResponse)
+        every { oAuth2ProviderClient.getAuthenticationToken(any(), any(), any()) } returns fakeCall
+
+        val request = Request.Builder().url("https://example.com").build()
+        val response = mockk<Response>()
+        every { response.request } returns request
+
+        // WHEN
+        val result = authenticator.authenticate(route = null, response = response)
+
+        // THEN
+        assertEquals("Bearer ACCESS123", result.header("Authorization"))
+        assertEquals(request.url, result.url)
+    }
+}
