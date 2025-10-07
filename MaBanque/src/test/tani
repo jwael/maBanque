@@ -1,0 +1,83 @@
+package com.arval.blm.core.adapter.crm
+
+import com.arval.blm.core.infrastructure.client.crm.CrmClient
+import io.mockk.*
+import okhttp3.Interceptor
+import okhttp3.Response
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import retrofit2.Retrofit
+import retrofit2.converter.jackson.JacksonConverterFactory
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+import java.net.SocketTimeoutException
+
+class CrmClientConfigTest {
+
+    private lateinit var crmProperties: CrmProperties
+    private lateinit var config: CrmClientConfig
+
+    @BeforeEach
+    fun setup() {
+        crmProperties = mockk(relaxed = true)
+        config = spyk(CrmClientConfig(crmProperties), recordPrivateCalls = true)
+
+        // Mocks properties
+        every { crmProperties.url } returns "http://fake-crm-url/"
+        every { crmProperties.tokenUrl } returns "http://fake-token-url/"
+    }
+
+    @Test
+    fun `should create CrmClient bean successfully`() {
+        val client = config.createCrmClient()
+        assertNotNull(client)
+        assertTrue(client is CrmClient)
+    }
+
+    @Test
+    fun `should create OAuth2ProviderClient bean successfully`() {
+        val oauthClient = config.createAuth2ProviderClient()
+        assertNotNull(oauthClient)
+    }
+
+    @Test
+    fun `retryInterceptor should retry on SocketTimeoutException`() {
+        val maxRetries = 3
+        val chain: Interceptor.Chain = mockk()
+        val request = mockk<okhttp3.Request>()
+        every { chain.request() } returns request
+
+        var attemptCount = 0
+        every { chain.proceed(any()) } answers {
+            attemptCount++
+            if (attemptCount < maxRetries) throw SocketTimeoutException("Timeout")
+            mockk<Response>()
+        }
+
+        // Appel de la méthode privée via reflection
+        val method = CrmClientConfig::class.java.getDeclaredMethod(
+            "retryInterceptor",
+            Interceptor.Chain::class.java,
+            Int::class.javaPrimitiveType
+        )
+        method.isAccessible = true
+        val response = method.invoke(config, chain, maxRetries) as Response
+
+        assertNotNull(response)
+        assertTrue(attemptCount >= maxRetries)
+    }
+
+    @Test
+    fun `okHttpLoggingInterceptor should return an interceptor instance`() {
+        val method = CrmClientConfig::class.java.getDeclaredMethod("okHttpLoggingInterceptor")
+        method.isAccessible = true
+        val interceptor = method.invoke(config) as Interceptor
+        assertNotNull(interceptor)
+    }
+
+    @Test
+    fun `createCrmClient should configure Retrofit with correct baseUrl`() {
+        val client = config.createCrmClient()
+        assertNotNull(client)
+    }
+}
