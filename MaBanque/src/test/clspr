@@ -1,0 +1,108 @@
+package com.arval.blm.infrastructure.driven.kafka
+
+import com.arval.blm.core.domain.model.*
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.springframework.kafka.core.KafkaTemplate
+import org.springframework.messaging.support.MessageBuilder
+import kotlin.test.assertNotNull
+import kotlin.test.assertEquals
+
+class ClsProviderAdapterTest {
+
+    private val kafkaContactTemplate: KafkaTemplate<String, ClsContactDataKafkaMessage> = mockk(relaxed = true)
+    private val kafkaCustomerTemplate: KafkaTemplate<String, ClsCustomerDataKafkaMessage> = mockk(relaxed = true)
+    private lateinit var adapter: ClsProviderAdapter
+
+    // ===== Common Given =====
+    private val countryCode = CountryCode("GB")
+    private val reconciliationId = ReconciliationId(ReferenceId("REF_BATCH_01"), ReferenceId("REF_ROW_01"))
+
+    private val crmClsContactData = CrmClsContactData(
+        id = "CONTACT_1",
+        batchId = "BATCH_01",
+        reconciliationId = reconciliationId,
+        rowNumber = 1,
+        rowReference = ReferenceId("REF_ROW_01"),
+        crmData = CrmData(
+            title = "Dr.",
+            salutation = "Dr.",
+            prefLanguageComm = "French",
+            gender = "Male",
+            contactRole = "Driver",
+            country = "GB",
+            mainCountry = "GB"
+        ),
+        clsData = mapOf(
+            "CLS_ID" to "CLS_123",
+            "SALESFORCE_ROLE_ID" to "SF_ROLE_123",
+            "EXTERNAL_ACCOUNT_ID" to "EXT_ACC_123"
+        ),
+        crmInsertedId = null
+    )
+
+    private val crmClsCustomerData = CrmClsCustomerData(
+        batchId = "BATCH_01",
+        reconciliationId = reconciliationId,
+        rowNumber = 1,
+        rowReference = ReferenceId("REF_ROW_01"),
+        crmData = CrmData(
+            title = "Mr.",
+            salutation = "Mr.",
+            prefLanguageComm = "English",
+            gender = "Male",
+            contactRole = "Owner",
+            country = "GB",
+            mainCountry = "GB"
+        ),
+        clsData = mapOf(
+            "persAcctSalesforceID" to "SF_123",
+            "persAcctType" to "TypeA",
+            "persAcctCLSAccountID" to "CLS_ACC_123"
+        ),
+        crmInsertedId = null
+    )
+
+    @BeforeEach
+    fun setup() {
+        adapter = ClsProviderAdapter(kafkaContactTemplate, kafkaCustomerTemplate)
+        adapter.sendingContactTopicName = "contact-topic"
+    }
+
+    @Test
+    fun `should send contact to CLS with correct headers`() {
+        // GIVEN
+        val slot = slot<MessageBuilder<ClsContactDataKafkaMessage>>()
+        every { kafkaContactTemplate.send(capture(slot)) } returns mockk(relaxed = true)
+
+        // WHEN
+        adapter.sendContactToCls(crmClsContactData, countryCode)
+
+        // THEN
+        verify { kafkaContactTemplate.send(any()) }
+        val message = slot.captured.build()
+        assertNotNull(message)
+        assertEquals("GB", message.headers["country"])
+        assertEquals(crmClsContactData.reconciliationId.toString(), message.headers["reconciliationId"])
+        assertEquals(crmClsContactData.clsData["CLS_ID"], message.payload.clID)
+    }
+
+    @Test
+    fun `should send customer to CLS with correct headers`() {
+        // GIVEN
+        val slot = slot<MessageBuilder<ClsCustomerDataKafkaMessage>>()
+        every { kafkaCustomerTemplate.send(capture(slot)) } returns mockk(relaxed = true)
+
+        // WHEN
+        adapter.sendCustomerToCls("customer-topic", "GB", crmClsCustomerData)
+
+        // THEN
+        verify { kafkaCustomerTemplate.send(any()) }
+        val message = slot.captured.build()
+        assertNotNull(message)
+        assertEquals("GB", message.headers["country"])
+        assertEquals(crmClsCustomerData.reconciliationId.toString(), message.headers["reconciliationId"])
+        assertEquals(crmClsCustomerData.clsData["persAcctSalesforceID"], message.payload.persAcctSalesforceID)
+    }
+}
