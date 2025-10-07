@@ -1,0 +1,60 @@
+import io.mockk.*
+import okhttp3.Interceptor
+import okhttp3.Request
+import okhttp3.Response
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+
+class OAuth2InterceptorTest {
+
+    private lateinit var oAuth2Authenticator: pAuth2Authenticator
+    private lateinit var interceptor: OAuth2Interceptor
+
+    @BeforeEach
+    fun setup() {
+        oAuth2Authenticator = mockk(relaxed = true)
+        interceptor = OAuth2Interceptor(oAuth2Authenticator)
+    }
+
+    @Test
+    fun `should add Authorization header when token is present`() {
+        // GIVEN
+        val request = Request.Builder()
+            .url("https://example.com")
+            .build()
+        val chain = mockk<Interceptor.Chain>()
+        every { chain.request() } returns request
+        every { chain.proceed(any()) } answers { firstArg() }
+        every { oAuth2Authenticator.token } returns "ACCESS_TOKEN"
+
+        // WHEN
+        val response = interceptor.intercept(chain)
+
+        // THEN
+        assertEquals(
+            "Bearer ACCESS_TOKEN",
+            response.request.header("Authorization")
+        )
+        verify { chain.proceed(match { it.header("Authorization") == "Bearer ACCESS_TOKEN" }) }
+    }
+
+    @Test
+    fun `should not add Authorization header when token is null`() {
+        // GIVEN
+        val request = Request.Builder()
+            .url("https://example.com")
+            .build()
+        val chain = mockk<Interceptor.Chain>()
+        every { chain.request() } returns request
+        every { chain.proceed(any()) } answers { firstArg() }
+        every { oAuth2Authenticator.token } returns null
+
+        // WHEN
+        val response = interceptor.intercept(chain)
+
+        // THEN
+        assertEquals(null, response.request.header("Authorization"))
+        verify { chain.proceed(match { it.header("Authorization") == null }) }
+    }
+}
