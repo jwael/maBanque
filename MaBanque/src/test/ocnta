@@ -1,0 +1,124 @@
+package com.arval.blm.core.adapter.crm
+
+import com.arval.blm.core.domain.model.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertFalse
+
+class CrmClsContactDataToKafkaPayloadTest {
+
+    @Test
+    fun `should correctly map crm cls contact data to kafka payload`() {
+        // GIVEN
+        val crmClsContactData = CrmClsContactData(
+            batchId = "BATCH_001",
+            reconciliationId = ReconciliationId(
+                ReferenceId("REF_BATCH1A"),
+                ReferenceId("REF_ROW001A")
+            ),
+            rowNumber = 1,
+            rowReference = ReferenceId("REF_ROW001A"),
+            crmData = CrmData(
+                title = "Mr.",
+                salutation = "Mr.",
+                prefLanguageComm = "EN",
+                gender = "Male",
+                contactRole = "Driver",
+                country = "GB",
+                mainCountry = "GB"
+            ),
+            clsData = mapOf(
+                "CLS_ID" to "CLS_123",
+                "SALESFORCE_ROLE_ID" to "ROLE_999",
+                "EXTERNAL_ACCOUNT_ID" to "EXT_456",
+                "EMPLOYEE_NUMBER" to "EMP_789",
+                "ACQUISITION_ID" to "ACQ_000",
+                "emptyField" to ""
+            ),
+            crmInsertedId = null
+        )
+
+        // WHEN
+        val kafkaMessage = crmClsContactData.toKafkaPayload()
+
+        // THEN
+        assertNotNull(kafkaMessage)
+        assertEquals("ROLE_999", kafkaMessage.contactRoleSalesForceID)
+        assertEquals("EXT_456", kafkaMessage.clsAccountID)
+        assertEquals("CLS_123", kafkaMessage.clsID)
+        assertFalse(kafkaMessage.data.containsKey("emptyField"))
+        assertEquals("ACQ_000", kafkaMessage.data["clsAcquisitionID"])
+    }
+
+    @Test
+    fun `should fallback to EMPLOYEE_NUMBER when CLS_ID is blank`() {
+        // GIVEN
+        val crmClsContactData = CrmClsContactData(
+            batchId = "BATCH_002",
+            reconciliationId = ReconciliationId(
+                ReferenceId("REF_BATCH2A"),
+                ReferenceId("REF_ROW002A")
+            ),
+            rowNumber = 2,
+            rowReference = ReferenceId("REF_ROW002A"),
+            crmData = CrmData(
+                title = "Mrs.",
+                salutation = "Mrs.",
+                prefLanguageComm = "FR",
+                gender = "Female",
+                contactRole = "Owner",
+                country = "FR",
+                mainCountry = "FR"
+            ),
+            clsData = mapOf(
+                "CLS_ID" to "",
+                "EMPLOYEE_NUMBER" to "EMP_FALLBACK"
+            ),
+            crmInsertedId = null
+        )
+
+        // WHEN
+        val kafkaMessage = crmClsContactData.toKafkaPayload()
+
+        // THEN
+        assertNotNull(kafkaMessage)
+        assertEquals("EMP_FALLBACK", kafkaMessage.clsID)
+    }
+
+    @Test
+    fun `should handle empty clsData gracefully`() {
+        // GIVEN
+        val crmClsContactData = CrmClsContactData(
+            batchId = "BATCH_003",
+            reconciliationId = ReconciliationId(
+                ReferenceId("REF_BATCH3A"),
+                ReferenceId("REF_ROW003A")
+            ),
+            rowNumber = 3,
+            rowReference = ReferenceId("REF_ROW003A"),
+            crmData = CrmData(
+                title = "Mx.",
+                salutation = "Mx.",
+                prefLanguageComm = "ES",
+                gender = "NonBinary",
+                contactRole = "Partner",
+                country = "ES",
+                mainCountry = "ES"
+            ),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        )
+
+        // WHEN
+        val kafkaMessage = crmClsContactData.toKafkaPayload()
+
+        // THEN
+        assertNotNull(kafkaMessage)
+        assertNull(kafkaMessage.contactRoleSalesForceID)
+        assertNull(kafkaMessage.clsAccountID)
+        assertNull(kafkaMessage.clsID)
+        assertEquals(emptyMap(), kafkaMessage.data)
+    }
+}
