@@ -1,0 +1,96 @@
+package com.arval.blm.core.adapter.crm
+
+import io.mockk.*
+import okhttp3.Request
+import okhttp3.Route
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import retrofit2.Call
+import retrofit2.Response
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+
+// Mock DTO pour le test
+data class TokenResponse(val accessToken: String)
+
+// Mock interface pour le test
+interface OAuth2ProviderClient {
+    fun getAuthenticationToken(clientId: String, clientSecret: String, grantType: String): Call<TokenResponse>
+}
+
+// DTO de configuration
+data class CrmProperties(
+    val clientId: String,
+    val clientSecret: String,
+    val grantType: String
+)
+
+// Classe à tester
+class PAuth2Authenticator(
+    private val crmProperties: CrmProperties,
+    private val oAuth2ProviderClient: OAuth2ProviderClient
+) : okhttp3.Authenticator {
+
+    var token: String? = null
+        private set
+
+    override fun authenticate(route: Route?, response: okhttp3.Response): Request {
+        val tokenResponse = oAuth2ProviderClient.getAuthenticationToken(
+            clientId = crmProperties.clientId,
+            clientSecret = crmProperties.clientSecret,
+            grantType = crmProperties.grantType
+        ).execute().body() ?: throw IllegalStateException("Token body was empty")
+
+        token = tokenResponse.accessToken
+        return response.request.newBuilder()
+            .header("Authorization", "Bearer $token")
+            .build()
+    }
+}
+
+// ===== Test =====
+class PAuth2AuthenticatorTest {
+
+    private lateinit var client: OAuth2ProviderClient
+    private lateinit var authenticator: PAuth2Authenticator
+    private val properties = CrmProperties(
+        clientId = "CLIENT_ID",
+        clientSecret = "SECRET",
+        grantType = "grant_type"
+    )
+
+    @BeforeEach
+    fun setup() {
+        client = mockk()
+        authenticator = PAuth2Authenticator(properties, client)
+    }
+
+    @Test
+    fun `should set token and add Authorization header`() {
+        // GIVEN
+        val tokenResponse = TokenResponse(accessToken = "ACCESS_TOKEN")
+        val call = mockk<Call<TokenResponse>>()
+        every { call.execute() } returns Response.success(tokenResponse)
+        every { client.getAuthenticationToken(any(), any(), any()) } returns call
+
+        val originalRequest = Request.Builder()
+            .url("http://test.com")
+            .build()
+        val response = okhttp3.Response.Builder()
+            .request(originalRequest)
+            .protocol(okhttp3.Protocol.HTTP_1_1)
+            .code(401)
+            .message("Unauthorized")
+            .build()
+
+        // WHEN
+        val newRequest = authenticator.authenticate(null, response)
+
+        // THEN
+        assertNotNull(authenticator.token)
+        assertEquals("ACCESS_TOKEN", authenticator.token)
+        assertEquals("Bearer ACCESS_TOKEN", newRequest.header("Authorization"))
+        verify { client.getAuthenticationToken(any(), any(), any()) }
+        verify { call.execute() }
+    }
+}
