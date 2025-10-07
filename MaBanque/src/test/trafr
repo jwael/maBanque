@@ -1,0 +1,121 @@
+package com.arval.blm.infrastructure.driving.rest.contact
+
+import com.arval.blm.application.api.ImportContactUseCaseApi
+import com.arval.blm.core.domain.model.ReferenceId
+import com.arval.blm.core.domain.model.CountryCode
+import com.arval.blm.infrastructure.configuration.properties.BlmImportAuthorizationProperties
+import com.arval.blm.infrastructure.driving.rest.dto.BatchReferenceDto
+import com.arval.blm.infrastructure.driving.rest.parser.ContactsvParser
+import io.mockk.*
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.springframework.mock.web.MockMultipartFile
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
+import java.net.URI
+
+class ContactImportControllerUnitTest {
+
+    // mocks
+    private val importContactUseCaseApi: ImportContactUseCaseApi = mockk()
+    // use a real instance for properties (simpler) or mock if you prefer
+    private val blmImportAuth = BlmImportAuthorizationProperties(enabled = false)
+
+    // controller under test
+    private val controller = ContactImportController(
+        importContactUseCaseApi = importContactUseCaseApi,
+        customCountryFeatureActivated = false,
+        blmAccessAuthorization = blmImportAuth
+    )
+
+    @BeforeEach
+    fun setUp() {
+        // mock the object parser so controller.importFile doesn't try to parse a real CSV
+        mockkObject(ContactsvParser)
+    }
+
+    @AfterEach
+    fun tearDown() {
+        unmockkObject(ContactsvParser)
+        clearAllMocks()
+    }
+
+    @Test
+    fun `should return 201 Created when import succeeds`() {
+        // GIVEN: a valid CSV multipart file
+        val file = MockMultipartFile(
+            "file",
+            "contacts.csv",
+            "text/csv",
+            "header\nrow".toByteArray()
+        )
+
+        // silence parser and return an empty list (controller doesn't rely on content for this test)
+        every { ContactsvParser.parse(any()) } returns emptyList()
+
+        // stub the use case to return a ReferenceId of length 10
+        every { importContactUseCaseApi.invoke(any(), any(), any(), any()) } returns ReferenceId("0123456789")
+
+        // WHEN
+        val response = controller.importFile(
+            file = file,
+            customCountry = null,
+            userCountry = "FR",
+            userUid = "user-1",
+            userRoles = listOf("B2B_FILE_IMPORT")
+        )
+
+        // THEN
+        assertEquals(201, response.statusCodeValue)
+        assertNotNull(response.body)
+        assertEquals("0123456789", response.body!!.batchReference)
+        assertEquals(URI("/api/v1/batches/0123456789/import-overview"), response.headers.location)
+
+        verify(exactly = 1) {
+            importContactUseCaseApi.invoke(any(), CountryCode("FR"), "contacts.csv", "user-1")
+        }
+    }
+
+    @Test
+    fun `should throw Forbidden when blm feature enabled and role missing`() {
+        // GIVEN
+        val file = MockMultipartFile("file", "contacts.csv", "text/csv", "header\nrow".toByteArray())
+        every { ContactsvParser.parse(any()) } returns emptyList()
+
+        // enable the policy that requires a role
+        blmImportAuth.enabled = true
+
+        // WHEN / THEN: userRoles does NOT contain B2B_FILE_IMPORT => should throw forbidden
+        val ex = assertFailsWith<Exception> {
+            controller.importFile(
+                file = file,
+                customCountry = null,
+                userCountry = "FR",
+                userUid = "user-2",
+                userRoles = emptyList()
+            )
+        }
+        // check message to ensure this is the expected branch (adjust message if your ForbiddenException msg differs)
+        assert(ex.message!!.contains("You currently don't have permission", ignoreCase = true))
+    }
+
+    @Test
+    fun `should throw IllegalArgumentException when file is not CSV`() {
+        // GIVEN: a non-csv file
+        val file = MockMultipartFile("file", "contacts.txt", "text/plain", "not csv".toByteArray())
+
+        // WHEN / THEN
+        val ex = assertFailsWith<IllegalArgumentException> {
+            controller.importFile(
+                file = file,
+                customCountry = null,
+                userCountry = "FR",
+                userUid = "user-3",
+                userRoles = listOf("B2B_FILE_IMPORT")
+            )
+        }
+        assertEquals("The file should be an CSV file", ex.message)
+    }
+}
