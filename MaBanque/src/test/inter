@@ -1,0 +1,61 @@
+package com.arval.blm.core.adapter.crm
+
+import io.mockk.*
+import okhttp3.Interceptor
+import okhttp3.Request
+import okhttp3.Response
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+
+class OAuth2InterceptorTest {
+
+    private lateinit var authenticator: PAuth2Authenticator
+    private lateinit var interceptor: OAuth2Interceptor
+    private lateinit var chain: Interceptor.Chain
+
+    @BeforeEach
+    fun setup() {
+        authenticator = mockk()
+        interceptor = OAuth2Interceptor(authenticator)
+        chain = mockk()
+    }
+
+    @Test
+    fun `should add Authorization header when token is present`() {
+        // GIVEN
+        every { authenticator.token } returns "ACCESS_TOKEN"
+        val originalRequest = Request.Builder().url("http://test.com").build()
+        val response = mockk<Response>()
+        every { chain.request() } returns originalRequest
+        every { chain.proceed(any()) } returns response
+
+        // WHEN
+        val result = interceptor.intercept(chain)
+
+        // THEN
+        assertEquals(response, result)
+        verify {
+            chain.proceed(withArg {
+                assertEquals("Bearer ACCESS_TOKEN", it.header("Authorization"))
+            })
+        }
+    }
+
+    @Test
+    fun `should proceed with original request when token is null`() {
+        // GIVEN
+        every { authenticator.token } returns null
+        val originalRequest = Request.Builder().url("http://test.com").build()
+        val response = mockk<Response>()
+        every { chain.request() } returns originalRequest
+        every { chain.proceed(any()) } returns response
+
+        // WHEN
+        val result = interceptor.intercept(chain)
+
+        // THEN
+        assertEquals(response, result)
+        verify { chain.proceed(originalRequest) }
+    }
+}
