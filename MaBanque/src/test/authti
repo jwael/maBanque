@@ -1,0 +1,77 @@
+package com.arval.blm.infrastructure.driven.apigee.crm.config
+
+import com.arval.blm.core.adapter.crm.OAuth2Authenticator
+import okhttp3.Interceptor
+import okhttp3.Request
+import okhttp3.Response
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import retrofit2.Call
+import retrofit2.Response as RetrofitResponse
+import kotlin.test.assertEquals
+
+class OAuth2InterceptorTest {
+
+    private val crmProperties = mockk<com.arval.blm.core.adapter.crm.CrmProperties>()
+    private val oAuth2ProviderClient = mockk<com.arval.blm.core.adapter.crm.OAuth2ProviderClient>()
+    private lateinit var authenticator: OAuth2Authenticator
+    private lateinit var interceptor: OAuth2Interceptor
+
+    private lateinit var tokenCall: Call<com.arval.blm.core.adapter.crm.AuthResponse>
+
+    @BeforeEach
+    fun setup() {
+        authenticator = OAuth2Authenticator(crmProperties, oAuth2ProviderClient)
+        interceptor = OAuth2Interceptor(authenticator)
+
+        // Mock général du CRM properties
+        every { crmProperties.clientId } returns "CLIENT_ID"
+        every { crmProperties.clientSecret } returns "SECRET"
+        every { crmProperties.grantType } returns "client_credentials"
+
+        // Mock du Call<AuthResponse>
+        tokenCall = mockk()
+        val authResponse = com.arval.blm.core.adapter.crm.AuthResponse(
+            accessToken = "FAKE_TOKEN",
+            tokenType = "Bearer",
+            expiresin = "3600"
+        )
+        every { tokenCall.execute() } returns RetrofitResponse.success(authResponse)
+
+        every { oAuth2ProviderClient.getAuthenticationToken(any(), any(), any()) } returns tokenCall
+    }
+
+    @Test
+    fun `should add Authorization header when token is available`() {
+        // GIVEN
+        val request = mockk<Request>(relaxed = true)
+        val chain = mockk<Interceptor.Chain>(relaxed = true)
+        every { chain.request() } returns request
+
+        // WHEN
+        val resultResponse = interceptor.intercept(chain)
+
+        // THEN
+        assertEquals("FAKE_TOKEN", authenticator.token)
+        verify { chain.proceed(withArg<Request> { assert(it.header("Authorization") == "Bearer FAKE_TOKEN") }) }
+        verify { oAuth2ProviderClient.getAuthenticationToken(any(), any(), any()) }
+        verify { tokenCall.execute() }
+    }
+
+    @Test
+    fun `should proceed without Authorization header when token is null`() {
+        // GIVEN
+        authenticator.token = null
+        val request = mockk<Request>(relaxed = true)
+        val chain = mockk<Interceptor.Chain>(relaxed = true)
+        every { chain.request() } returns request
+
+        // WHEN
+        interceptor.intercept(chain)
+
+        // THEN
+        verify { chain.proceed(request) }
+        verify(exactly = 0) { oAuth2ProviderClient.getAuthenticationToken(any(), any(), any()) }
+    }
+}
