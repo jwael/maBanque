@@ -1,0 +1,151 @@
+package com.arval.blm.core.adapter.crm
+
+import com.arval.blm.core.domain.model.*
+import com.arval.blm.core.infrastructure.client.crm.CrmClient
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import retrofit2.Call
+import retrofit2.Response
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+
+class CrmCustomerProviderAdapterTest {
+
+    private val crmClient: CrmClient = mockk()
+    private lateinit var adapter: CrmCustomerProviderAdapter
+
+    // ===== GIVEN global =====
+    private lateinit var crmClsCustomerData: CrmClsCustomerData
+    private lateinit var crmRoleData: CrmRoleData
+    private lateinit var crmCustomerRequest: CrmCustomerRequest
+    private lateinit var crmRoleRequest: CrmRoleRequest
+    private lateinit var crmResponseBody: CrmCustomerResponse
+    private lateinit var crmRoleResponseBody: CrmRoleResponse
+
+    @BeforeEach
+    fun setup() {
+        adapter = CrmCustomerProviderAdapter(crmClient)
+
+        crmClsCustomerData = CrmClsCustomerData(
+            batchId = "BATCH_001",
+            reconciliationId = ReconciliationId(ReferenceId("REF_BATCH_1"), ReferenceId("REF_ROW_01")),
+            rowNumber = 1,
+            rowReference = ReferenceId("REF_ROW_01"),
+            crmData = CrmData(
+                title = "Dr.",
+                salutation = "Dr.",
+                prefLanguageComm = "French",
+                gender = "Male",
+                contactRole = "Driver",
+                country = "GB",
+                mainCountry = "GB",
+                salesforceAccountId = "SF_123"
+            ),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        )
+
+        crmRoleData = CrmRoleData(
+            reconciliationId = crmClsCustomerData.reconciliationId,
+            batchId = crmClsCustomerData.batchId,
+            rowNumber = crmClsCustomerData.rowNumber,
+            crmCustomerData = crmClsCustomerData
+        )
+
+        crmCustomerRequest = mockk(relaxed = true)
+        crmRoleRequest = mockk(relaxed = true)
+        crmResponseBody = mockk(relaxed = true)
+        crmRoleResponseBody = mockk(relaxed = true)
+    }
+
+    @Test
+    fun `should create CRM customer successfully`() {
+        val crmCall = mockk<Call<CrmCustomerResponse>>()
+        every { crmCall.execute() } returns Response.success(crmResponseBody)
+        mockkStatic("com.arval.blm.core.domain.model.CrmClsCustomerDataKt")
+        every { crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = false) } returns crmCustomerRequest
+        every { crmClient.createCustomer(any(), any()) } returns crmCall
+        every { crmResponseBody.toDomain() } returns CrmCustomerResponsePayload(
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Customer created successfully",
+            crmAccountId = "SF_123",
+            crmRoleId = null
+        )
+
+        val result = adapter.createCrmCustomer(crmClsCustomerData)
+
+        assertNotNull(result)
+        assertEquals(RecordStepStatus.OK, result.crmStatus)
+        assertEquals("Customer created successfully", result.crmMessage)
+        verify { crmClient.createCustomer(any(), any()) }
+        verify { crmCall.execute() }
+    }
+
+    @Test
+    fun `should update CRM customer successfully`() {
+        val crmCall = mockk<Call<CrmCustomerResponse>>()
+        every { crmCall.execute() } returns Response.success(crmResponseBody)
+        mockkStatic("com.arval.blm.core.domain.model.CrmClsCustomerDataKt")
+        every { crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = true) } returns crmCustomerRequest
+        every { crmClient.updateCustomer(any(), any(), any()) } returns crmCall
+        every { crmResponseBody.toDomain() } returns CrmCustomerResponsePayload(
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Customer updated successfully",
+            crmAccountId = "SF_123",
+            crmRoleId = null
+        )
+
+        val result = adapter.updateCrmCustomer(crmClsCustomerData)
+
+        assertNotNull(result)
+        assertEquals(RecordStepStatus.OK, result.crmStatus)
+        assertEquals("Customer updated successfully", result.crmMessage)
+        verify { crmClient.updateCustomer(any(), any(), any()) }
+        verify { crmCall.execute() }
+    }
+
+    @Test
+    fun `should create CRM role successfully`() {
+        val crmCall = mockk<Call<CrmRoleResponse>>()
+        every { crmCall.execute() } returns Response.success(crmRoleResponseBody)
+        mockkStatic("com.arval.blm.core.domain.model.CrmRoleDataKt")
+        every { crmRoleData.toCrmCustomerRoleRequest() } returns crmRoleRequest
+        every { crmClient.createRole(any(), any(), any()) } returns crmCall
+        every { crmRoleResponseBody.toDomain() } returns CrmRoleResponsePayload(
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Role created successfully",
+            crmRoleId = "ROLE_123"
+        )
+
+        val result = adapter.createCrmRole(crmRoleData)
+
+        assertNotNull(result)
+        assertEquals(RecordStepStatus.OK, result.crmStatus)
+        assertEquals("Role created successfully", result.crmMessage)
+        verify { crmClient.createRole(any(), any(), any()) }
+        verify { crmCall.execute() }
+    }
+
+    @Test
+    fun `should update CRM role successfully`() {
+        val crmCall = mockk<Call<CrmRoleResponse>>()
+        every { crmCall.execute() } returns Response.success(crmRoleResponseBody)
+        mockkStatic("com.arval.blm.core.domain.model.CrmRoleDataKt")
+        every { crmRoleData.toCrmCustomerRoleUpdateRequest() } returns crmRoleRequest
+        every { crmClient.updateRole(any(), any(), any(), any()) } returns crmCall
+        every { crmRoleResponseBody.toDomain() } returns CrmRoleResponsePayload(
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Role updated successfully",
+            crmRoleId = "ROLE_123"
+        )
+
+        val result = adapter.updateCrmRole(crmRoleData)
+
+        assertNotNull(result)
+        assertEquals(RecordStepStatus.OK, result.crmStatus)
+        assertEquals("Role updated successfully", result.crmMessage)
+        verify { crmClient.updateRole(any(), any(), any(), any()) }
+        verify { crmCall.execute() }
+    }
+}
