@@ -1,0 +1,67 @@
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
+import java.time.LocalDate
+
+class ClEpartnerCustomerKafkaMessageTest {
+
+    @Test
+    fun `should map persAcctPartnerNetwork PAL001 to Ligne Conseil Auto with all important fields`() {
+        // GIVEN
+        val partnerNetworkCode = "PAL001"
+        val testMessage = ClEpartnerCustomerKafkaMessage(
+            mainCountry = "DE",
+            persAcctPartnerNetwork = partnerNetworkCode,
+            persAcctSalutation = "Ms",
+            persAcctFirstName = "Alice",
+            persAcctLastName = "Martin",
+            persAcctGender = "F",
+            persAcctIdentificationNumber = "ID456",
+            persAcctType = "Business",
+            persAcctBirthDate = LocalDate.of(1985, 5, 15),
+            persAcctPersonalLandlinePhone = "0987654321",
+            persAcctPersonalEmail = "alice.martin@example.com",
+            persAcctPersonalAddressStreet = "12 Avenue Test",
+            persAcctPersonalAddressPostalCode = "10115",
+            persAcctPersonalAddressCountry = "DE",
+            persAcctPersonalAddressCity = "Berlin",
+            persAcctPersonalAddressState = "Berlin",
+            persAcctPersonalAddressStreetNumber = "12",
+            cLsTaxRegistrationNumber = "TAX789",
+            clsForeignCompany = null,
+            clsFuelDepositRequired = "Yes",
+            clsDateEstablished = LocalDate.of(2000, 3, 1),
+            clsOwnerCompanyCode = "OWN123",
+            clOwnerCompanyType = "Private",
+            clsVatInvoiceFrequency = "Monthly",
+            clsCreditLimitExpiryDate = LocalDate.of(2025, 12, 31),
+            clsCreditLineId = 999,
+            clsCostCentre = "CC001",
+            clsDecisionId = 42,
+            clsAuthOutLimitAmount = 50000,
+            clsQuoteId = 12345,
+            clsQuoteRevision = 2,
+            clsBasReference = "BAS001",
+            persAcctPartnerBranchCode = "BR001",
+            partnerAccountId = "PA123",
+            clsGroupCode = "GRP001",
+            clsInvoicePolicyCode = "INV001",
+            clsSalesSubLedger = "SUB001",
+            clsAdvanceInvoice = "AI001",
+            roleCode = "Driver"
+        )
+
+        // WHEN
+        val payload = testMessage.mapToCustomerPayload(rowNumber = 1)
+
+        // THEN
+        assertThat(payload.crmData.partnerNetwork).isEqualTo("Ligne Conseil Auto")
+        assertThat(payload.clsData["clsTaxRegistrationNumber"]).isEqualTo("TAX789")
+        assertThat(payload.clsData["clsGroupCode"]).isEqualTo("GRP001")
+        assertThat(payload.clsData["clsInvoicePolicyCode"]).isEqualTo("INV001")
+        assertThat(payload.clsData["clsAdvanceInvoice"]).isEqualTo("AI001")
+        assertThat(payload.clsData["clsSalesSubLedger"]).isEqualTo("SUB001")
+        assertThat(payload.clsData["clsBasReference"]).isEqualTo("BAS001")
+        assertThat(payload.crmData.contactRole).isEqualTo("Driver")
+        assertThat(payload.clsData["clsQuoteId"]).isEqualTo("12345")
+    }
+}
