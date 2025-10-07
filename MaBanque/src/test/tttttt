@@ -1,0 +1,35 @@
+package com.arval.blm.infrastructure.driven.apigee.tibco.config
+
+import org.junit.jupiter.api.Test
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.context.TestConfiguration
+import org.springframework.boot.context.properties.EnableConfigurationProperties
+import org.springframework.boot.test.util.TestPropertyValues
+import org.springframework.context.annotation.AnnotationConfigApplicationContext
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+
+@SpringBootTest
+class TibcoPropertiesTest {
+
+    @Test
+    fun `should bind tibco properties correctly`() {
+        // GIVEN
+        val context = AnnotationConfigApplicationContext()
+        TestPropertyValues.of("blm-api.tibco.url=https://tibco.test.url")
+            .applyTo(context)
+        context.register(TibcoPropertiesTestConfig::class.java)
+        context.refresh()
+
+        // WHEN
+        val props = context.getBean(TibcoProperties::class.java)
+
+        // THEN
+        assertNotNull(props)
+        assertEquals("https://tibco.test.url", props.url)
+    }
+
+    @TestConfiguration
+    @EnableConfigurationProperties(TibcoProperties::class)
+    class TibcoPropertiesTestConfig
+}
