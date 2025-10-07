@@ -1,0 +1,204 @@
+package com.arval.bim.infrastructure.driven.kafka.message
+
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
+import java.time.LocalDate
+
+class ClEpartnerCustomerKafkaMessageTest {
+
+    private val objectMapper = jacksonObjectMapper()
+
+    @Test
+    fun `should create ClEpartnerCustomerKafkaMessage successfully`() {
+        // Given
+        val message = ClEpartnerCustomerKafkaMessage(
+            mainCountry = "FR",
+            persAcctPartnerNetwork = "PAL001",
+            persAcctSalutation = "Mr",
+            persAcctFirstName = "John",
+            persAcctLastName = "Doe",
+            persAcctGender = "M",
+            persAcctIdentificationNumber = "ID123",
+            persAcctType = "B2B",
+            persAcctBirthDate = LocalDate.of(1990, 1, 1),
+            persAcctPersonalLandlinePhone = "0123456789",
+            persAcctPersonalEmail = "john.doe@example.com",
+            persAcctPersonalAddressStreet = "1 rue de Paris",
+            persAcctPersonalAddressPostalCode = "75001",
+            persAcctPersonalAddressCountry = "FR",
+            persAcctPersonalAddressCity = "Paris",
+            persAcctPersonalAddressState = "IDF",
+            persAcctPersonalAddressStreetNumber = "1",
+            cLsTaxRegistrationNumber = "TX123",
+            clsForeignCompany = null,
+            clsFuelDepositRequired = null,
+            clsDateEstablished = LocalDate.of(2000, 1, 1),
+            clsOwnerCompanyCode = "COMP001",
+            clOwnerCompanyType = "TypeA",
+            clsVatInvoiceFrequency = "Monthly",
+            clsGovBizIdSubCode = null,
+            clsSubGroupCode = null,
+            cLsGroupCode = null,
+            clsCreditControllerCode = null,
+            clInvoicePolicyCode = null,
+            cLsSalesSubLedger = null,
+            clsChargeGroup = null,
+            clsPersAcctFaxNumber = null,
+            clsBankAccountType = null,
+            clsBankAddressType = null,
+            clsBankSortCode = null,
+            clsBankAccountNumber = null,
+            clsBankAccountName = null,
+            clsBankPostCode = null,
+            clsBankAddress = null,
+            clsBankName = null,
+            clAdvanceInvoice = null,
+            clsCreditLimitExpiryDate = null,
+            clsCreditLineId = null,
+            clsCostCentre = null,
+            clsDecisionId = null,
+            clsAuthOutLimitAmount = null,
+            clsQuoteld = null,
+            clsQuoteRevision = null,
+            clsBasReference = null,
+            persAcctPartnerBranchCode = null,
+            partnerAccountId = null
+        )
+
+        // Then
+        assertThat(message.mainCountry).isEqualTo("FR")
+        assertThat(message.persAcctFirstName).isEqualTo("John")
+        assertThat(message.persAcctLastName).isEqualTo("Doe")
+        assertThat(message.persAcctPartnerNetwork).isEqualTo("PAL001")
+    }
+
+    @Test
+    fun `should map partner network correctly`() {
+        // Given
+        val message = ClEpartnerCustomerKafkaMessage(
+            mainCountry = null,
+            persAcctPartnerNetwork = "PAL001",
+            persAcctSalutation = null,
+            persAcctFirstName = null,
+            persAcctLastName = null,
+            persAcctGender = null,
+            persAcctIdentificationNumber = null,
+            persAcctType = null,
+            persAcctBirthDate = null,
+            persAcctPersonalLandlinePhone = null,
+            persAcctPersonalEmail = null,
+            persAcctPersonalAddressStreet = null,
+            persAcctPersonalAddressPostalCode = null,
+            persAcctPersonalAddressCountry = null,
+            persAcctPersonalAddressCity = null,
+            persAcctPersonalAddressState = null,
+            persAcctPersonalAddressStreetNumber = null,
+            cLsTaxRegistrationNumber = null,
+            clsForeignCompany = null,
+            clsFuelDepositRequired = null,
+            clsDateEstablished = null,
+            clsOwnerCompanyCode = null,
+            clOwnerCompanyType = null,
+            clsVatInvoiceFrequency = null,
+            clsGovBizIdSubCode = null,
+            clsSubGroupCode = null,
+            cLsGroupCode = null,
+            clsCreditControllerCode = null,
+            clInvoicePolicyCode = null,
+            cLsSalesSubLedger = null,
+            clsChargeGroup = null,
+            clsPersAcctFaxNumber = null,
+            clsBankAccountType = null,
+            clsBankAddressType = null,
+            clsBankSortCode = null,
+            clsBankAccountNumber = null,
+            clsBankAccountName = null,
+            clsBankPostCode = null,
+            clsBankAddress = null,
+            clsBankName = null,
+            clAdvanceInvoice = null,
+            clsCreditLimitExpiryDate = null,
+            clsCreditLineId = null,
+            clsCostCentre = null,
+            clsDecisionId = null,
+            clsAuthOutLimitAmount = null,
+            clsQuoteld = null,
+            clsQuoteRevision = null,
+            clsBasReference = null,
+            persAcctPartnerBranchCode = null,
+            partnerAccountId = null
+        )
+
+        // When
+        val mapped = message.partnerNetworkMapping(message.persAcctPartnerNetwork)
+
+        // Then
+        assertThat(mapped).isEqualTo("Ligne Conseil Auto") // correspond à PAL001
+    }
+
+    @Test
+    fun `should serialize and deserialize JSON correctly`() {
+        // Given
+        val message = ClEpartnerCustomerKafkaMessage(
+            mainCountry = "FR",
+            persAcctPartnerNetwork = "PAL001",
+            persAcctSalutation = "Mr",
+            persAcctFirstName = "John",
+            persAcctLastName = "Doe",
+            persAcctGender = "M",
+            persAcctIdentificationNumber = "ID123",
+            persAcctType = "B2B",
+            persAcctBirthDate = LocalDate.of(1990, 1, 1),
+            persAcctPersonalLandlinePhone = "0123456789",
+            persAcctPersonalEmail = "john.doe@example.com",
+            persAcctPersonalAddressStreet = "1 rue de Paris",
+            persAcctPersonalAddressPostalCode = "75001",
+            persAcctPersonalAddressCountry = "FR",
+            persAcctPersonalAddressCity = "Paris",
+            persAcctPersonalAddressState = "IDF",
+            persAcctPersonalAddressStreetNumber = "1",
+            cLsTaxRegistrationNumber = "TX123",
+            clsForeignCompany = null,
+            clsFuelDepositRequired = null,
+            clsDateEstablished = LocalDate.of(2000, 1, 1),
+            clsOwnerCompanyCode = "COMP001",
+            clOwnerCompanyType = "TypeA",
+            clsVatInvoiceFrequency = "Monthly",
+            clsGovBizIdSubCode = null,
+            clsSubGroupCode = null,
+            cLsGroupCode = null,
+            clsCreditControllerCode = null,
+            clInvoicePolicyCode = null,
+            cLsSalesSubLedger = null,
+            clsChargeGroup = null,
+            clsPersAcctFaxNumber = null,
+            clsBankAccountType = null,
+            clsBankAddressType = null,
+            clsBankSortCode = null,
+            clsBankAccountNumber = null,
+            clsBankAccountName = null,
+            clsBankPostCode = null,
+            clsBankAddress = null,
+            clsBankName = null,
+            clAdvanceInvoice = null,
+            clsCreditLimitExpiryDate = null,
+            clsCreditLineId = null,
+            clsCostCentre = null,
+            clsDecisionId = null,
+            clsAuthOutLimitAmount = null,
+            clsQuoteld = null,
+            clsQuoteRevision = null,
+            clsBasReference = null,
+            persAcctPartnerBranchCode = null,
+            partnerAccountId = null
+        )
+
+        // When
+        val json = objectMapper.writeValueAsString(message)
+        val deserialized = objectMapper.readValue(json, ClEpartnerCustomerKafkaMessage::class.java)
+
+        // Then
+        assertThat(deserialized).isEqualTo(message)
+    }
+}
