@@ -1,0 +1,78 @@
+import com.arval.blm.core.domain.model.CrmProperties
+import io.mockk.*
+import okhttp3.Interceptor
+import okhttp3.Request
+import okhttp3.Response
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import retrofit2.Call
+import retrofit2.Response as RetrofitResponse
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+
+class PAuth2AuthenticatorTest {
+
+    private val crmProperties = CrmProperties(
+        url = "https://example.com",
+        clientId = "clientId",
+        clientSecret = "secret",
+        grantType = "client_credentials",
+        tokenUrl = "https://example.com/token"
+    )
+    private val oAuth2ProviderClient: OAuth2ProviderClient = mockk()
+    private lateinit var authenticator: pAuth2Authenticator
+
+    @BeforeEach
+    fun setup() {
+        authenticator = pAuth2Authenticator(crmProperties, oAuth2ProviderClient)
+    }
+
+    @Test
+    fun `should set token when authentication is successful`() {
+        // GIVEN
+        val tokenResponse = mockk<OAuth2TokenResponse> {
+            every { accessToken } returns "ACCESS_TOKEN"
+            every { tokenType } returns "Bearer"
+        }
+        val call = mockk<Call<OAuth2TokenResponse>> {
+            every { execute() } returns RetrofitResponse.success(tokenResponse)
+        }
+        every { oAuth2ProviderClient.getAuthenticationToken(any(), any(), any()) } returns call
+
+        val request = mockk<Request>(relaxed = true)
+        val response = mockk<Response> {
+            every { request } returns request
+        }
+
+        // WHEN
+        val resultRequest = authenticator.authenticate(null, response)
+
+        // THEN
+        assertNotNull(authenticator.token)
+        assertEquals("ACCESS_TOKEN", authenticator.token)
+        verify { oAuth2ProviderClient.getAuthenticationToken("clientId", "secret", "client_credentials") }
+    }
+}
+
+class OAuth2InterceptorTest {
+
+    private val oAuth2Authenticator = mockk<pAuth2Authenticator>(relaxed = true)
+    private val interceptor = OAuth2Interceptor(oAuth2Authenticator)
+
+    @Test
+    fun `should add Authorization header when token is present`() {
+        // GIVEN
+        val request = Request.Builder().url("https://example.com").build()
+        val chain = mockk<Interceptor.Chain>()
+        every { chain.request() } returns request
+        every { oAuth2Authenticator.token } returns "TOKEN"
+        every { chain.proceed(any()) } answers { firstArg() }
+
+        // WHEN
+        val result = interceptor.intercept(chain)
+
+        // THEN
+        assertEquals("Bearer TOKEN", result.request.header("Authorization"))
+        verify { chain.proceed(any()) }
+    }
+}
