@@ -1,0 +1,74 @@
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import okhttp3.Request
+import okhttp3.Response as OkHttpResponse
+import okhttp3.Route
+import retrofit2.Call
+import retrofit2.Response
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+
+class PAuth2AuthenticatorTest {
+
+    private val crmProperties = CrmProperties(
+        url = "https://crm.example.com",
+        clientId = "test-client-id",
+        clientSecret = "test-secret",
+        grantType = "client_credentials",
+        tokenUrl = "https://crm.example.com/token"
+    )
+
+    private val oAuth2ProviderClient: OAuth2ProviderClient = mockk()
+    private lateinit var authenticator: PAuth2Authenticator
+
+    @BeforeEach
+    fun setup() {
+        authenticator = PAuth2Authenticator(crmProperties, oAuth2ProviderClient)
+    }
+
+    @Test
+    fun `should authenticate and set token`() {
+        // GIVEN
+        val callMock = mockk<Call<TokenResponse>>()
+        val tokenResponse = TokenResponse(accessToken = "ACCESS_TOKEN")
+        every { oAuth2ProviderClient.getAuthenticationToken(
+            clientId = crmProperties.clientId,
+            clientSecret = crmProperties.clientSecret,
+            grantType = crmProperties.grantType
+        ) } returns callMock
+        every { callMock.execute() } returns Response.success(tokenResponse)
+
+        val originalRequest = Request.Builder()
+            .url("https://example.com/api")
+            .build()
+        val responseMock = mockk<OkHttpResponse>()
+        every { responseMock.request } returns originalRequest
+
+        // WHEN
+        val newRequest = authenticator.authenticate(mockk<Route>(relaxed = true), responseMock)
+
+        // THEN
+        assertEquals("Bearer ACCESS_TOKEN", newRequest.header("Authorization"))
+        assertEquals("ACCESS_TOKEN", authenticator.token)
+    }
+
+    @Test
+    fun `should throw exception when token body is null`() {
+        // GIVEN
+        val callMock = mockk<Call<TokenResponse>>()
+        every { oAuth2ProviderClient.getAuthenticationToken(
+            any(), any(), any()
+        ) } returns callMock
+        every { callMock.execute() } returns Response.success(null)
+
+        val responseMock = mockk<OkHttpResponse>()
+        every { responseMock.request } returns Request.Builder().url("https://example.com").build()
+
+        // WHEN / THEN
+        assertFailsWith<IllegalStateException> {
+            authenticator.authenticate(mockk(relaxed = true), responseMock)
+        }
+    }
+}
