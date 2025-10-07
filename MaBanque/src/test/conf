@@ -1,0 +1,27 @@
+package com.arval.blm.core.config
+
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class BLmImportAuthorizationPropertiesTest {
+
+    @Test
+    fun `should have default enabled as false`() {
+        val props = BLmImportAuthorizationProperties()
+        assertFalse(props.enabled, "Default value of enabled should be false")
+    }
+
+    @Test
+    fun `should allow setting enabled to true`() {
+        val props = BLmImportAuthorizationProperties(enabled = true)
+        assertTrue(props.enabled, "Enabled property should be settable to true")
+    }
+
+    @Test
+    fun `should allow setting enabled to false`() {
+        val props = BLmImportAuthorizationProperties(enabled = false)
+        assertFalse(props.enabled, "Enabled property should be settable to false")
+    }
+}
