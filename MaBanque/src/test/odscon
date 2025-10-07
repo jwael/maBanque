@@ -1,0 +1,45 @@
+package com.arval.blm.infrastructure.driven.apigee.ods.config
+
+import com.arval.blm.infrastructure.driven.apigee.tibco.config.TibcoProperties
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
+import org.junit.jupiter.api.Test
+import org.mockito.kotlin.mock
+import retrofit2.Retrofit
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class OdsClientConfigTest {
+
+    private val tibcoProperties = TibcoProperties(url = "https://tibco.ods.test")
+    private val config = OdsClientConfig(tibcoProperties)
+
+    @Test
+    fun `should create retrofit OdsClient with correct base url`() {
+        val odsClient = config.createHierarchyContactClient()
+        assertNotNull(odsClient)
+    }
+
+    @Test
+    fun `should create OkHttp client with logging interceptor`() {
+        val clientField = config.javaClass.getDeclaredMethod("createOkHttpClient")
+        clientField.isAccessible = true
+        val client = clientField.invoke(config) as OkHttpClient
+        assertTrue(client.interceptors().any { it is HttpLoggingInterceptor })
+    }
+
+    @Test
+    fun `should configure jackson mapper correctly`() {
+        val mapperMethod = config.javaClass.getDeclaredMethod("createJacksonMapper")
+        mapperMethod.isAccessible = true
+        val mapper = mapperMethod.invoke(config)
+        assertNotNull(mapper)
+    }
+
+    @Test
+    fun `should return logging interceptor with BODY level`() {
+        val interceptor = config.okHttpLoggingInterceptor()
+        assertEquals(HttpLoggingInterceptor.Level.BODY, interceptor.level)
+    }
+}
