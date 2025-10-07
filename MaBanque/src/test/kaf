@@ -1,0 +1,72 @@
+package com.arval.blm.infrastructure.driven.apigee.kafka
+
+import com.arval.blm.domain.model.kafka.ClsContactDataKafkaMessage
+import com.arval.blm.domain.model.kafka.ClsCustomerDataKafkaMessage
+import org.apache.kafka.clients.producer.ProducerConfig
+import org.apache.kafka.common.config.SaslConfigs
+import org.apache.kafka.common.config.SslConfigs
+import org.apache.kafka.common.serialization.StringSerializer
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.springframework.kafka.core.DefaultKafkaProducerFactory
+import org.springframework.kafka.core.KafkaTemplate
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class KafkaProducerConfigTest {
+
+    private lateinit var config: KafkaProducerConfig
+
+    @BeforeEach
+    fun setUp() {
+        config = KafkaProducerConfig()
+        // Simule les valeurs injectées par Spring
+        config.apply {
+            bootstrapServers = "localhost:9092"
+            // Par défaut, idempotence = true
+        }
+    }
+
+    @Test
+    fun `should build correct producer configuration`() {
+        val props = config.run {
+            val method = this::class.java.getDeclaredMethod("producerConfiguration")
+            method.isAccessible = true
+            method.invoke(this) as Map<String, Any>
+        }
+
+        assertEquals("localhost:9092", props[ProducerConfig.BOOTSTRAP_SERVERS_CONFIG])
+        assertEquals(true, props[ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG])
+        assertEquals(StringSerializer::class.java, props[ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG])
+        assertTrue(props[ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG].toString().contains("JsonSerializer"))
+    }
+
+    @Test
+    fun `should create contact producer factory`() {
+        val factory = config.producerContactFactory()
+        assertNotNull(factory)
+        assertTrue(factory is DefaultKafkaProducerFactory<*, *>)
+    }
+
+    @Test
+    fun `should create kafka contact template`() {
+        val template = config.kafkaContactTemplate()
+        assertNotNull(template)
+        assertTrue(template is KafkaTemplate<*, *>)
+    }
+
+    @Test
+    fun `should create customer producer factory`() {
+        val factory = config.producerCustomerFactory()
+        assertNotNull(factory)
+        assertTrue(factory is DefaultKafkaProducerFactory<*, *>)
+    }
+
+    @Test
+    fun `should create kafka customer template`() {
+        val template = config.kafkaCustomerTemplate()
+        assertNotNull(template)
+        assertTrue(template is KafkaTemplate<*, *>)
+    }
+}
