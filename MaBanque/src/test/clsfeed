@@ -1,0 +1,64 @@
+package com.arval.bim.infrastructure.driven.kafka.message
+
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
+
+class ClsFeedbackCustomerKafkaMessageTest {
+
+    private val objectMapper = jacksonObjectMapper()
+
+    @Test
+    fun `should create ClsFeedbackCustomerKafkaMessage successfully`() {
+        // Given
+        val scope = "CustomerImport"
+        val status = "SUCCESS"
+        val errorMessage: String? = null
+
+        // When
+        val message = ClsFeedbackCustomerKafkaMessage(scope, status, errorMessage)
+
+        // Then
+        assertThat(message.scope).isEqualTo(scope)
+        assertThat(message.status).isEqualTo(status)
+        assertThat(message.errorMessage).isNull()
+    }
+
+    @Test
+    fun `should be equal when properties are identical`() {
+        // Given
+        val message1 = ClsFeedbackCustomerKafkaMessage("CustomerImport", "SUCCESS", null)
+        val message2 = ClsFeedbackCustomerKafkaMessage("CustomerImport", "SUCCESS", null)
+
+        // Then
+        assertThat(message1).isEqualTo(message2)
+        assertThat(message1.hashCode()).isEqualTo(message2.hashCode())
+    }
+
+    @Test
+    fun `should correctly serialize and deserialize JSON`() {
+        // Given
+        val original = ClsFeedbackCustomerKafkaMessage("ScopeA", "FAILED", "Error occurred")
+
+        // When
+        val json = objectMapper.writeValueAsString(original)
+        val deserialized = objectMapper.readValue(json, ClsFeedbackCustomerKafkaMessage::class.java)
+
+        // Then
+        assertThat(deserialized).isEqualTo(original)
+    }
+
+    @Test
+    fun `should copy and modify one field`() {
+        // Given
+        val original = ClsFeedbackCustomerKafkaMessage("ScopeA", "SUCCESS", null)
+
+        // When
+        val updated = original.copy(status = "FAILED", errorMessage = "Validation error")
+
+        // Then
+        assertThat(updated.scope).isEqualTo("ScopeA")
+        assertThat(updated.status).isEqualTo("FAILED")
+        assertThat(updated.errorMessage).isEqualTo("Validation error")
+    }
+}
