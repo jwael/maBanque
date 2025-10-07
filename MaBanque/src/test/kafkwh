@@ -1,0 +1,90 @@
+package com.arval.blm.core.adapter.crm
+
+import com.arval.blm.core.domain.model.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertFalse
+
+class CrmClsCustomerDataToKafkaPayloadTest {
+
+    @Test
+    fun `should correctly map crm cls customer data to kafka payload`() {
+        // GIVEN
+        val crmClsCustomerData = CrmClsCustomerData(
+            batchId = "BATCH_001",
+            reconciliationId = ReconciliationId(
+                ReferenceId("REF_BATCH1A"),
+                ReferenceId("REF_ROW001A")
+            ),
+            rowNumber = 1,
+            rowReference = ReferenceId("REF_ROW001A"),
+            crmData = CrmData(
+                title = "Mr.",
+                salutation = "Mr.",
+                prefLanguageComm = "EN",
+                gender = "Male",
+                contactRole = "Driver",
+                country = "GB",
+                mainCountry = "GB"
+            ),
+            clsData = mapOf(
+                "persAcctSalesforceID" to "SF_123",
+                "persAcctType" to "Individual",
+                "persAcctCLSAccountID" to "CLS_456",
+                "mainCountry" to "GB",
+                "otherField" to "value",
+                "emptyField" to ""
+            ),
+            crmInsertedId = null
+        )
+
+        // WHEN
+        val kafkaMessage = crmClsCustomerData.toKafkaPayLoad()
+
+        // THEN
+        assertNotNull(kafkaMessage)
+        assertEquals("SF_123", kafkaMessage.persAcctSalesforceID)
+        assertEquals("Individual", kafkaMessage.persAcctType)
+        assertEquals("CLS_456", kafkaMessage.persAcctCLSAccountID)
+        assertFalse(kafkaMessage.data.containsKey("mainCountry"), "mainCountry should be filtered out")
+        assertFalse(kafkaMessage.data.containsKey("emptyField"), "empty fields should be filtered out")
+        assertEquals("value", kafkaMessage.data["otherField"])
+    }
+
+    @Test
+    fun `should handle missing optional fields gracefully`() {
+        // GIVEN
+        val crmClsCustomerData = CrmClsCustomerData(
+            batchId = "BATCH_002",
+            reconciliationId = ReconciliationId(
+                ReferenceId("REF_BATCH2A"),
+                ReferenceId("REF_ROW002A")
+            ),
+            rowNumber = 2,
+            rowReference = ReferenceId("REF_ROW002A"),
+            crmData = CrmData(
+                title = "Mrs.",
+                salutation = "Mrs.",
+                prefLanguageComm = "FR",
+                gender = "Female",
+                contactRole = "Owner",
+                country = "FR",
+                mainCountry = "FR"
+            ),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        )
+
+        // WHEN
+        val kafkaMessage = crmClsCustomerData.toKafkaPayLoad()
+
+        // THEN
+        assertNotNull(kafkaMessage)
+        assertNull(kafkaMessage.persAcctSalesforceID)
+        assertNull(kafkaMessage.persAcctType)
+        assertNull(kafkaMessage.persAcctCLSAccountID)
+        assertEquals(emptyMap(), kafkaMessage.data)
+    }
+}
