@@ -1,0 +1,76 @@
+package com.arval.blm.core.adapter.crm
+
+import com.arval.blm.core.domain.model.*
+import com.arval.blm.core.infrastructure.client.crm.CrmClient
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import retrofit2.Call
+import retrofit2.Response
+import java.time.Instant
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+
+class CrmCustomerProviderAdapterTest {
+
+    private val crmClient: CrmClient = mockk()
+    private lateinit var adapter: CrmCustomerProviderAdapter
+
+    @BeforeEach
+    fun setup() {
+        adapter = CrmCustomerProviderAdapter(crmClient)
+    }
+
+    @Test
+    fun `should return successful CrmCustomerResponsePayload when CRM creation is successful`() {
+        // ===== GIVEN =====
+        val crmClsCustomerData = CrmClsCustomerData(
+            batchId = "BATCH_001",
+            reconciliationId = ReconciliationId(
+                ReferenceId("REF_BATCH_1"), 
+                ReferenceId("REF_ROW_01")
+            ),
+            rowNumber = 1,
+            rowReference = ReferenceId("REF_ROW_01"),
+            crmData = CrmData(
+                title = "Dr.",
+                salutation = "Dr.",
+                prefLanguageComm = "French",
+                gender = "Male",
+                contactRole = "Driver",
+                country = "GB",
+                mainCountry = "GB"
+            ),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        )
+
+        val crmRequest = mockk<CrmCustomerRequest>(relaxed = true)
+        val crmResponseBody = mockk<CrmCustomerResponse>(relaxed = true)
+
+        val crmCall = mockk<Call<CrmCustomerResponse>>()
+        every { crmCall.execute() } returns Response.success(crmResponseBody)
+
+        // Mock des extensions et appels nécessaires
+        mockkStatic("com.arval.blm.core.domain.model.CrmClsCustomerDataKt")
+        every { crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = false) } returns crmRequest
+        every { crmClient.createCustomer(any(), any()) } returns crmCall
+        every { crmResponseBody.toDomain() } returns CrmCustomerResponsePayload(
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Customer created successfully",
+            crmAccountId = "SF_123",
+            crmRoleId = null
+        )
+
+        // ===== WHEN =====
+        val result = adapter.createCrmCustomer(crmClsCustomerData)
+
+        // ===== THEN =====
+        assertNotNull(result)
+        assertEquals(RecordStepStatus.OK, result.crmStatus)
+        assertEquals("Customer created successfully", result.crmMessage)
+        assertEquals("SF_123", result.crmAccountId)
+        verify { crmClient.createCustomer(any(), any()) }
+        verify { crmCall.execute() }
+    }
+}
