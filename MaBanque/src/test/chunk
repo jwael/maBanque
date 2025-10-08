@@ -1,0 +1,50 @@
+@Value("\${batch.chunk-size:500}")
+private val chunkSize: Int = 500
+
+@Value("\${batch.parallel-threads:4}")
+private val parallelThreads: Int = 4
+
+private val logger = LoggerFactory.getLogger(ImportCustomerService::class.java)
+
+
+
+open fun applyBatch(batchId: String, customers: List<CustomerPayload>) {
+    logger.info("Starting batch import for ${customers.size} customers with batchId=$batchId")
+
+    // Découper la liste en chunks
+    val chunks = customers.chunked(chunkSize)
+
+    // Lancer le traitement parallèle
+    runBlocking {
+        val dispatcher = Dispatchers.Default.limitedParallelism(parallelThreads)
+
+        chunks.mapIndexed { index, chunk ->
+            async(dispatcher) {
+                try {
+                    logger.info("Processing chunk ${index + 1}/${chunks.size} (size=${chunk.size})")
+
+                    // Ici tu appelles ta logique de traitement habituelle
+                    processChunk(batchId, chunk)
+
+                    logger.info("Chunk ${index + 1} completed successfully.")
+                } catch (ex: Exception) {
+                    logger.error("Error while processing chunk ${index + 1}: ${ex.message}", ex)
+                    // Tu peux gérer ici la reprise ou la mise à jour du statut
+                    // ex: batchRepository.updateChunkStatus(batchId, index, "FAILED")
+                }
+            }
+        }.awaitAll()
+    }
+
+    logger.info("✅ Batch import completed for batchId=$batchId")
+}
+private fun processChunk(batchId: String, chunk: List<CustomerPayload>) {
+    chunk.forEach { customer ->
+        try {
+            // Appelle ici la logique existante (mapping, envoi Kafka, etc.)
+            importCustomer(customer, batchId)
+        } catch (ex: Exception) {
+            logger.error("Error processing customer ${customer.id}: ${ex.message}", ex)
+        }
+    }
+}
