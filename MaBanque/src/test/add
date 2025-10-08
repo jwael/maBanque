@@ -1,0 +1,8 @@
+private fun importCustomer(customer: CustomerPayload, batchId: String) {
+    // Exemple de logique de traitement
+    val mapped = customerMapper.toDomain(customer)
+    kafkaProducer.send(mapped)
+
+    // (optionnel) mise à jour du statut de batch
+    batchRepository.updateStatus(batchId, customer.id, "PROCESSED")
+}
