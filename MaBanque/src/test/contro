@@ -1,0 +1,29 @@
+@PostMapping("/import")
+override fun importFile(
+    @RequestPart("file") file: MultipartFile,
+    customCountry: String?,
+    userCountry: String,
+    userUid: String,
+    @ExtractUserRoles userRoles: List<String>?
+): ResponseEntity<BatchReferenceDto> {
+
+    val contacts: List<ContactPayload> = ContactsvParser.parse(file)
+    val countryCodeStr = if(customCountryFeatureActivated && customCountry != null) customCountry else userCountry
+    val countryCode = CountryCode(countryCodeStr)
+
+    // Découper en chunks et traiter
+    val chunkSize = 50
+    val batchReferences = contacts.chunked(chunkSize).map { chunk ->
+        // Ici on peut paralléliser avec coroutines ou CompletableFuture
+        importContactUseCaseApi.invoke(
+            contacts = chunk,
+            countryCode = countryCode,
+            fileName = file.originalFilename ?: "unknown",
+            userId = userUid
+        )
+    }
+
+    val firstBatchReference = batchReferences.first() // ou concat tous les IDs
+    return ResponseEntity.created(URI("/api/v1/batches/${firstBatchReference.value}/import-overview"))
+        .body(BatchReferenceDto(batchReference = firstBatchReference.value))
+}
