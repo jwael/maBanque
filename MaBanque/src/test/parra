@@ -1,0 +1,91 @@
+@PostMapping("/import")
+override fun importFile(
+    @RequestPart("file") file: MultipartFile,
+    @RequestParam("countryCode") countryCodeStr: String,
+    @RequestHeader("userUid") userUid: String
+): ResponseEntity<BatchReferenceDto> {
+
+    val batchRef = importContactUseCaseApi.importInChunks(
+        file = file,
+        countryCode = CountryCode(countryCodeStr),
+        userUid = userUid
+    )
+
+    return ResponseEntity
+        .created(URI("/api/v1/batches/${batchRef.value}/import-overview"))
+        .body(BatchReferenceDto(batchReference = batchRef.value))
+}
+
+interface ImportContactUseCaseApi {
+    fun importInChunks(file: MultipartFile, countryCode: CountryCode, userUid: String): BatchReferenceId
+}
+override fun importInChunks(file: MultipartFile, countryCode: CountryCode, userUid: String): BatchReferenceId {
+    val batchRef = BatchReferenceId.new()
+    val chunks = CsvChunkParser.parseInChunks(file, chunkSize = 500)
+
+    runBlocking {
+        chunks.mapIndexed { index, chunk ->
+            async(Dispatchers.IO) {
+                importChunk(chunk, countryCode, batchRef, userUid, index)
+            }
+        }.awaitAll()
+    }
+
+    return batchRef
+}
+
+private fun importChunk(
+    chunk: List<ContactPayload>,
+    countryCode: CountryCode,
+    batchRef: BatchReferenceId,
+    userUid: String,
+    index: Int
+) {
+    logger.info("Processing chunk $index for batch ${batchRef.value}")
+    importContactUseCaseApi.invoke(
+        contacts = chunk,
+        countryCode = countryCode,
+        fileName = "chunk-$index",
+        userUid = userUid
+    )
+}
+
+package com.arval.bim.infrastructure.parser
+
+import com.arval.bim.domain.model.ContactPayload
+import org.springframework.web.multipart.MultipartFile
+
+object CsvChunkParser {
+
+    fun parseInChunks(file: MultipartFile, chunkSize: Int = 500): Sequence<List<ContactPayload>> {
+        val reader = file.inputStream.bufferedReader()
+        val lines = reader.readLines().drop(1) // ignore header
+
+        return sequence {
+            lines.chunked(chunkSize).forEach { chunk ->
+                val parsedChunk = chunk.map { ContactPayload.fromCsvLine(it) }
+                yield(parsedChunk)
+            }
+        }
+    }
+}
+
+package com.arval.bim.infrastructure.driven.kafka.messages
+
+import com.arval.bim.domain.model.ContactPayload
+
+data class ImportChunkKafkaMessage(
+    val batchId: String,
+    val chunkIndex: Int,
+    val contacts: List<ContactPayload>
+)
+
+@KafkaListener(topics = ["contact-import-chunks"], groupId = "contact-import-group")
+fun onChunkReceived(message: ImportChunkKafkaMessage) {
+    importContactUseCaseApi.invoke(
+        contacts = message.contacts,
+        countryCode = CountryCode("FR"),
+        fileName = "chunk-${message.chunkIndex}",
+        userUid = "system"
+    )
+}
