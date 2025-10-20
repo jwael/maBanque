@@ -1,0 +1,85 @@
+package com.arval.blm.infrastructure.driven.apigee.crm.customer.request
+
+import com.arval.blm.domain.model.crm.CrmClsCustomerData
+import com.arval.blm.domain.model.crm.CrmData
+import com.arval.blm.domain.model.common.CountryCode
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+
+class CrmCustomerRequestTest {
+
+    private val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+
+    @ParameterizedTest(name = "should map correctly for country={0}, contactRole={1}, isCrmUpdate={2}")
+    @CsvSource(
+        // country, contactRole, isCrmUpdate, expectedRolesCount, expectedCustomerNotNull
+        "FRANCE, MANAGER, false, 1, true",
+        "UNITED KINGDOM, , false, 2, true",
+        "FRANCE, , false, 0, true",
+        "FRANCE, , true, 0, false"
+    )
+    fun `should map fields correctly under various conditions`(
+        country: String?,
+        contactRole: String?,
+        isCrmUpdate: Boolean,
+        expectedRolesCount: Int,
+        expectedCustomerNotNull: Boolean
+    ) {
+        // GIVEN
+        val crmData = CrmData(
+            firstName = "John",
+            surname = "Doe",
+            mainCountry = country,
+            contactRole = contactRole,
+            startDate = LocalDate.of(2024, 10, 16),
+            email = "john.doe@email.com",
+            phone = "0606060606",
+            kycType = "STANDARD",
+            authorizedSignature = true,
+            mainContact = true,
+            partnerBranchCode = "BR01",
+            partnerBranchName = "Branch Paris",
+            partnerAccountId = "ACC001",
+            partnerContactEmail = "branch@email.com",
+            partnerContactFirstName = "Marc",
+            partnerContactName = "Dupont",
+            partnerNetwork = "PartnerNet",
+            partnerContactPhone = "0707070707"
+        )
+
+        val crmClsCustomerData = CrmClsCustomerData(
+            reconciliationId = "REF-${country}-${contactRole ?: "none"}",
+            crmCustomerData = crmData
+        )
+
+        // WHEN
+        val request = crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = isCrmUpdate)
+
+        // THEN
+        val data = request.data
+
+        // --- Vérification générique
+        assertThat(request.correlationId).startsWith("REF-")
+        assertThat(data.lastName).isEqualTo("Doe")
+        assertThat(data.firstName).isEqualTo("John")
+        assertThat(data.email).isEqualTo("john.doe@email.com")
+        assertThat(data.mainCountry)
+            .isEqualTo(CountryCode.getISOCodeByCountryName(country))
+
+        // --- Vérification conditionnelle
+        if (expectedCustomerNotNull) {
+            assertThat(data.customer).isNotNull
+        } else {
+            assertThat(data.customer).isNull()
+        }
+
+        if (expectedRolesCount == 0) {
+            assertThat(data.roles).isNull()
+        } else {
+            assertThat(data.roles).hasSize(expectedRolesCount)
+        }
+    }
+}
