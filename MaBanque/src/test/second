@@ -1,0 +1,102 @@
+}
+
+    // 2️⃣ ──────────────────────────────────────────────────────────────
+    @ParameterizedTest
+    @CsvSource(
+        "null, null, null, null, null, null, null, null, true",         // no addresses
+        "10, Rue A, Paris, IDF, 75000, FRANCE, null, null, false",      // only personal
+        "null, null, null, null, null, null, 99, Rue B, false"          // only professional
+    )
+    fun `should create addresses correctly`(
+        personalStreetNumber: String?,
+        personalStreet: String?,
+        personalCity: String?,
+        personalProvince: String?,
+        personalZip: String?,
+        personalCountry: String?,
+        professionalStreetNumber: String?,
+        professionalStreet: String?,
+        expectedNull: Boolean
+    ) {
+        val crmData = CrmData(
+            dynPersonalStreetNumber = personalStreetNumber,
+            personalStreet = personalStreet,
+            personalCity = personalCity,
+            personalProvince = personalProvince,
+            personalZipPostalCode = personalZip,
+            personalCountry = personalCountry,
+            dynProfessionalStreetNumber = professionalStreetNumber,
+            street = professionalStreet,
+            city = personalCity,
+            professionalProvince = personalProvince,
+            postalCode = personalZip,
+            country = personalCountry
+        )
+
+        val method = CrmCustomerRequest::class.java.getDeclaredMethod(
+            "createAddresses", CrmData::class.java
+        ).apply { isAccessible = true }
+
+        val result = method.invoke(CrmCustomerRequest::class, crmData)
+
+        if (expectedNull) assertThat(result).isNull()
+        else assertThat(result).isNotNull
+    }
+
+    // 3️⃣ ──────────────────────────────────────────────────────────────
+    @ParameterizedTest
+    @CsvSource(
+        "true, FRANCE, ROLE_A, 0",
+        "false, UNITED KINGDOM, ROLE_A, 2",
+        "false, FRANCE, , 0",
+        "false, FRANCE, DRIVER, 1"
+    )
+    fun `should create roles correctly`(
+        isCrmUpdate: Boolean,
+        mainCountry: String?,
+        contactRole: String?,
+        expectedSize: Int
+    ) {
+        val crmData = CrmData(
+            mainCountry = mainCountry,
+            contactRole = contactRole,
+            startDate = LocalDate.of(2024, 10, 16)
+        )
+
+        val method = CrmCustomerRequest::class.java.getDeclaredMethod(
+            "createRoles", CrmData::class.java, Boolean::class.java
+        ).apply { isAccessible = true }
+
+        val result = method.invoke(CrmCustomerRequest::class, crmData, isCrmUpdate) as? List<CrmRole>?
+        assertThat(result?.size ?: 0).isEqualTo(expectedSize)
+    }
+
+    // 4️⃣ ──────────────────────────────────────────────────────────────
+    @Test
+    fun `should map fields and format date correctly`() {
+        val crmData = CrmData(
+            firstName = "Jean",
+            surname = "Dupont",
+            birthDate = LocalDate.of(1990, 5, 20),
+            mainCountry = "FRANCE",
+            contactRole = "DRIVER"
+        )
+
+        val crmClsCustomerData = CrmClsCustomerData(
+            reconciliationId = com.arval.blm.core.domain.model.crm.ReconciliationId(
+                com.arval.blm.core.domain.model.crm.ReferenceId("REF001"),
+                com.arval.blm.core.domain.model.crm.ReferenceId("ROW1")
+            ),
+            crmData = crmData
+        )
+
+        val result = crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = false)
+        val date = crmData.birthDate?.format(formatter)
+
+        assertThat(result.data.firstName).isEqualTo("Jean")
+        assertThat(result.data.lastName).isEqualTo("Dupont")
+        assertThat(result.data.birthDate).isEqualTo(date)
+        assertThat(result.data.roles).isNotNull
+        assertThat(result.correlationId).isEqualTo("REF001-ROW1")
+    }
+}
