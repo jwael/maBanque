@@ -1,0 +1,158 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.springframework.kafka.core.KafkaTemplate
+import org.springframework.kafka.support.KafkaHeaders
+import org.springframework.messaging.support.MessageBuilder
+import org.springframework.kafka.support.SendResult
+import java.util.concurrent.CompletableFuture
+import kotlin.test.assertEquals
+import kotlin.test.assertThrows
+
+class ClsProviderAdapterTest {
+
+    private val kafkaContactTemplate = mockk<KafkaTemplate<String, ClsContactDataKafkaMessage>>(relaxed = true)
+    private val kafkaCustomerTemplate = mockk<KafkaTemplate<String, ClsCustomerDataKafkaMessage>>(relaxed = true)
+    
+    private lateinit var adapter: ClsProviderAdapter
+
+    @BeforeEach
+    fun setUp() {
+        clearAllMocks()
+        adapter = ClsProviderAdapter(kafkaContactTemplate, kafkaCustomerTemplate)
+        adapter.sendingContactTopicName = "contact-topic"
+    }
+
+    // ==================== TESTS SIMPLIFIÉS ====================
+
+    @ParameterizedTest
+    @CsvSource(
+        "FR, BATCH00001-ROWREF0001, CONTACT_123",
+        "US, BATCH00002-ROWREF0002, CONTACT_456"
+    )
+    fun `sendContactToCls should send message`(
+        countryCode: String,
+        reconciliationId: String,
+        contactId: String
+    ) {
+        // Given
+        val crmClsContactData = createCrmClsContactData(
+            reconciliationId = reconciliationId,
+            contactId = contactId
+        )
+        val country = CountryCode(countryCode)
+        
+        val future = CompletableFuture.completedFuture(mockk<SendResult<String, ClsContactDataKafkaMessage>>())
+        // CORRECTION : Spécifier le type pour any()
+        every { kafkaContactTemplate.send(any<org.springframework.messaging.Message<ClsContactDataKafkaMessage>>()) } returns future
+
+        // When
+        adapter.sendContactToCls(crmClsContactData, country)
+
+        // Then
+        verify { kafkaContactTemplate.send(any<org.springframework.messaging.Message<ClsContactDataKafkaMessage>>()) }
+    }
+
+    @Test
+    fun `sendContactToCls should throw exception when kafka send fails`() {
+        // Given
+        val crmClsContactData = createCrmClsContactData()
+        val country = CountryCode("FR")
+        
+        // CORRECTION : Spécifier le type pour any()
+        every { kafkaContactTemplate.send(any<org.springframework.messaging.Message<ClsContactDataKafkaMessage>>()) } throws RuntimeException("Kafka error")
+
+        // When & Then
+        assertThrows<RuntimeException> {
+            adapter.sendContactToCls(crmClsContactData, country)
+        }
+        
+        verify { kafkaContactTemplate.send(any<org.springframework.messaging.Message<ClsContactDataKafkaMessage>>()) }
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "customer-topic, FR, BATCH00001-ROWREF0001, CUSTOMER_123",
+        "partner-topic, US, BATCH00002-ROWREF0002, CUSTOMER_456"
+    )
+    fun `sendCustomerToCls should send message`(
+        topicName: String,
+        countryCode: String,
+        reconciliationId: String,
+        customerId: String
+    ) {
+        // Given
+        val crmClsCustomerData = createCrmClsCustomerData(
+            reconciliationId = reconciliationId,
+            customerId = customerId
+        )
+        
+        val future = CompletableFuture.completedFuture(mockk<SendResult<String, ClsCustomerDataKafkaMessage>>())
+        // CORRECTION : Spécifier le type pour any()
+        every { kafkaCustomerTemplate.send(any<org.springframework.messaging.Message<ClsCustomerDataKafkaMessage>>()) } returns future
+
+        // When
+        adapter.sendCustomerToCls(topicName, countryCode, crmClsCustomerData)
+
+        // Then
+        verify { kafkaCustomerTemplate.send(any<org.springframework.messaging.Message<ClsCustomerDataKafkaMessage>>()) }
+    }
+
+    @Test
+    fun `sendCustomerToCls should throw exception when kafka send fails`() {
+        // Given
+        val crmClsCustomerData = createCrmClsCustomerData()
+        
+        // CORRECTION : Spécifier le type pour any()
+        every { kafkaCustomerTemplate.send(any<org.springframework.messaging.Message<ClsCustomerDataKafkaMessage>>()) } throws RuntimeException("Kafka error")
+
+        // When & Then
+        assertThrows<RuntimeException> {
+            adapter.sendCustomerToCls("test-topic", "FR", crmClsCustomerData)
+        }
+        
+        verify { kafkaCustomerTemplate.send(any<org.springframework.messaging.Message<ClsCustomerDataKafkaMessage>>()) }
+    }
+
+    // ==================== MÉTHODES UTILITAIRES ====================
+
+    private fun createCrmClsContactData(
+        reconciliationId: String = "BATCH00001-ROWREF0001",
+        contactId: String = "CONTACT_123"
+    ): CrmClsContactData {
+        val mockReconciliationId = mockk<ReconciliationId>()
+        every { mockReconciliationId.print() } returns reconciliationId
+        
+        return CrmClsContactData(
+            id = contactId,
+            reconciliationId = mockReconciliationId,
+            batchId = "BATCH00001",
+            rowNumber = 1,
+            rowReference = ReferenceId(value = "ROWREF0001"),
+            crmData = com.arval.blm.core.domain.model.contact.CrmData(),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        )
+    }
+
+    private fun createCrmClsCustomerData(
+        reconciliationId: String = "BATCH00001-ROWREF0001", 
+        customerId: String = "CUSTOMER_123"
+    ): CrmClsCustomerData {
+        val mockReconciliationId = mockk<ReconciliationId>()
+        every { mockReconciliationId.print() } returns reconciliationId
+        
+        return CrmClsCustomerData(
+            id = customerId,
+            reconciliationId = mockReconciliationId,
+            batchId = "BATCH00001",
+            rowNumber = 1,
+            rowReference = ReferenceId(value = "ROWREF0001"),
+            crmData = com.arval.blm.core.domain.model.customer.CrmData(),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        )
+    }
+}
