@@ -1,0 +1,126 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.springframework.kafka.core.KafkaTemplate
+import org.springframework.kafka.support.KafkaHeaders
+import org.springframework.messaging.Message
+import org.springframework.messaging.MessageHeaders
+import org.springframework.messaging.support.MessageBuilder
+import org.springframework.messaging.support.GenericMessage
+import org.springframework.kafka.support.SendResult
+import java.util.concurrent.CompletableFuture
+import kotlin.test.assertEquals
+import kotlin.test.assertThrows
+
+class ClsProviderAdapterTest {
+
+    private val kafkaContactTemplate = mockk<KafkaTemplate<String, ClsContactDataKafkaMessage>>()
+    private val kafkaCustomerTemplate = mockk<KafkaTemplate<String, ClsCustomerDataKafkaMessage>>()
+    
+    private lateinit var adapter: ClsProviderAdapter
+
+    @BeforeEach
+    fun setUp() {
+        clearAllMocks()
+        adapter = ClsProviderAdapter(kafkaContactTemplate, kafkaCustomerTemplate)
+        adapter.sendingContactTopicName = "contact-topic"
+    }
+
+    // ==================== TESTS PARAMÉTRÉS POUR sendContactToCls ====================
+
+    @ParameterizedTest
+    @CsvSource(
+        // countryCode, reconciliationId, contactId
+        "FR, BATCH00001-ROWREF001, CONTACT_123",
+        "US, BATCH00002-ROWREF002, CONTACT_456", 
+        "DE, BATCH00003-ROWREF003, CONTACT_789",
+        "ES, BATCH00004-ROWREF004, CONTACT_TEST"
+    )
+    fun `sendContactToCls should send message with correct headers and payload`(
+        countryCode: String,
+        reconciliationId: String,
+        contactId: String
+    ) {
+        // Given
+        val crmClsContactData = createCrmClsContactData(
+            reconciliationId = reconciliationId,
+            contactId = contactId
+        )
+        val country = CountryCode(countryCode)
+        val kafkaMessage = mockk<ClsContactDataKafkaMessage>()
+        val message = mockk<GenericMessage<ClsContactDataKafkaMessage>>(relaxed = true)
+        val sendResult = mockk<SendResult<String, ClsContactDataKafkaMessage>>()
+        val future = CompletableFuture.completedFuture(sendResult)
+        val voidFuture = CompletableFuture.completedFuture(null as Void?)
+        val messageBuilder = mockk<MessageBuilder>(relaxed = true)
+        
+        every { crmClsContactData.toKafkaPayload() } returns kafkaMessage
+        every { MessageBuilder.withPayload(kafkaMessage) } returns messageBuilder
+        every { messageBuilder.setHeader(KafkaHeaders.TOPIC, "contact-topic") } returns messageBuilder
+        every { messageBuilder.setHeader("country", countryCode) } returns messageBuilder
+        every { messageBuilder.setHeader("reconciliationId", reconciliationId) } returns messageBuilder
+        every { messageBuilder.build() } returns message
+        every { kafkaContactTemplate.send(message) } returns future
+        every { future.thenRun(any()) } returns voidFuture
+
+        // When
+        adapter.sendContactToCls(crmClsContactData, country)
+
+        // Then
+        verify { 
+            MessageBuilder.withPayload(kafkaMessage)
+            messageBuilder.setHeader(KafkaHeaders.TOPIC, "contact-topic")
+            messageBuilder.setHeader("country", countryCode)
+            messageBuilder.setHeader("reconciliationId", reconciliationId)
+            messageBuilder.build()
+        }
+        verify { kafkaContactTemplate.send(message) }
+        verify { future.thenRun(any()) }
+    }
+
+    // ==================== MÉTHODES UTILITAIRES ====================
+
+    private fun createCrmClsContactData(
+        reconciliationId: String = "BATCH00001-ROWREF001",
+        contactId: String = "CONTACT_123"
+    ): CrmClsContactData {
+        return CrmClsContactData(
+            id = contactId,
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId(value = "BATCH00001"),  // 10 caractères
+                rowReference = ReferenceId(value = "ROWREF001")     // 10 caractères
+            ),
+            batchId = "BATCH00001",  // ← CORRECTION : String au lieu de Long
+            rowNumber = 1,
+            rowReference = ReferenceId(value = "ROWREF001"),        // 10 caractères
+            crmData = com.arval.blm.core.domain.model.contact.CrmData(),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        ).apply {
+            every { this@apply.reconciliationId.print() } returns reconciliationId
+        }
+    }
+
+    private fun createCrmClsCustomerData(
+        reconciliationId: String = "BATCH00001-ROWREF001", 
+        customerId: String = "CUSTOMER_123"
+    ): CrmClsCustomerData {
+        return CrmClsCustomerData(
+            id = customerId,
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId(value = "BATCH00001"),  // 10 caractères
+                rowReference = ReferenceId(value = "ROWREF001")     // 10 caractères
+            ),
+            batchId = "BATCH00001",  // ← CORRECTION : String au lieu de Long
+            rowNumber = 1,
+            rowReference = ReferenceId(value = "ROWREF001"),        // 10 caractères
+            crmData = com.arval.blm.core.domain.model.customer.CrmData(),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        ).apply {
+            every { this@apply.reconciliationId.print() } returns reconciliationId
+        }
+    }
+}
