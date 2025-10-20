@@ -1,0 +1,276 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.params.provider.ValueSource
+
+class ClsCustomerDataKafkaMessageTest {
+
+    // ==================== TESTS PARAMÉTRÉS POUR toKafkaPayload ====================
+
+    @ParameterizedTest
+    @CsvSource(
+        // persAcctSalesforceID, persAcctType, persAcctCLSAccountID, field1Key, field1Value, field2Key, field2Value
+        "SF_123, PERSONAL, CLS_123, firstName, John, lastName, Doe",
+        "SF_456, BUSINESS, CLS_456, company, Acme, phone, +123456",
+        "SF_789, PARTNER, CLS_789, email, test@test.com, address, Paris",
+        ", PERSONAL, CLS_999, status, active, type, premium",
+        "SF_000, , CLS_000, category, A, level, 1",
+        "SF_111, PERSONAL, , code, XYZ, value, 42"
+    )
+    fun `toKafkaPayload should map all fields correctly`(
+        persAcctSalesforceID: String?,
+        persAcctType: String?,
+        persAcctCLSAccountID: String?,
+        field1Key: String,
+        field1Value: String,
+        field2Key: String,
+        field2Value: String
+    ) {
+        // Given
+        val clsData = mapOf(
+            "persAcctSalesforceID" to (persAcctSalesforceID ?: ""),
+            "persAcctType" to (persAcctType ?: ""),
+            "persAcctCLSAccountID" to (persAcctCLSAccountID ?: ""),
+            field1Key to field1Value,
+            field2Key to field2Value
+        )
+        
+        val crmClsCustomerData = CrmClsCustomerData(
+            batchId = 1L,
+            reconciliationId = ReconciliationId("batch-ref", "row-ref"),
+            rowNumber = 1,
+            rowReference = "row-ref",
+            crmData = CrmData(),
+            clsData = clsData,
+            crmInsertedId = null
+        )
+
+        // When
+        val result = crmClsCustomerData.toKafkaPayload()
+
+        // Then
+        assertEquals(persAcctSalesforceID, result.persAcctSalesforceID)
+        assertEquals(persAcctType, result.persAcctType)
+        assertEquals(persAcctCLSAccountID, result.persAcctCLSAccountID)
+        
+        // Vérifier que les champs spécifiques sont dans data
+        assertEquals(field1Value, result.data[field1Key])
+        assertEquals(field2Value, result.data[field2Key])
+        
+        // Vérifier que les champs ID ne sont pas dupliqués dans data
+        assertFalse(result.data.containsKey("persAcctSalesforceID"))
+        assertFalse(result.data.containsKey("persAcctType"))
+        assertFalse(result.data.containsKey("persAcctCLSAccountID"))
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        // fieldKey, fieldValue, shouldBeIncluded
+        "firstName, John, true",
+        "lastName, Doe, true",
+        "email, test@test.com, true",
+        "phone, +123456789, true",
+        "mainCountry, FR, false",  // mainCountry doit être filtré
+        "emptyField, '', false",   // champ vide doit être filtré
+        "blankField, '   ', false" // champ avec espaces doit être filtré
+    )
+    fun `toKafkaPayload should filter empty fields and mainCountry`(
+        fieldKey: String,
+        fieldValue: String,
+        shouldBeIncluded: Boolean
+    ) {
+        // Given
+        val clsData = mapOf(
+            "persAcctSalesforceID" to "SF_123",
+            "persAcctType" to "PERSONAL", 
+            "persAcctCLSAccountID" to "CLS_123",
+            fieldKey to fieldValue
+        )
+        
+        val crmClsCustomerData = CrmClsCustomerData(
+            batchId = 1L,
+            reconciliationId = ReconciliationId("batch-ref", "row-ref"),
+            rowNumber = 1,
+            rowReference = "row-ref",
+            crmData = CrmData(),
+            clsData = clsData,
+            crmInsertedId = null
+        )
+
+        // When
+        val result = crmClsCustomerData.toKafkaPayload()
+
+        // Then
+        if (shouldBeIncluded) {
+            assertTrue(result.data.containsKey(fieldKey))
+            assertEquals(fieldValue, result.data[fieldKey])
+        } else {
+            assertFalse(result.data.containsKey(fieldKey))
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["", "   ", "null"])
+    fun `toKafkaPayload should handle empty ID fields correctly`(emptyValue: String) {
+        // Given
+        val clsData = mapOf(
+            "persAcctSalesforceID" to emptyValue,
+            "persAcctType" to emptyValue,
+            "persAcctCLSAccountID" to emptyValue,
+            "validField" to "validValue"
+        )
+        
+        val crmClsCustomerData = CrmClsCustomerData(
+            batchId = 1L,
+            reconciliationId = ReconciliationId("batch-ref", "row-ref"),
+            rowNumber = 1,
+            rowReference = "row-ref", 
+            crmData = CrmData(),
+            clsData = clsData,
+            crmInsertedId = null
+        )
+
+        // When
+        val result = crmClsCustomerData.toKafkaPayload()
+
+        // Then
+        assertNull(result.persAcctSalesforceID?.takeIf { it.isNotBlank() })
+        assertNull(result.persAcctType?.takeIf { it.isNotBlank() })
+        assertNull(result.persAcctCLSAccountID?.takeIf { it.isNotBlank() })
+        assertEquals("validValue", result.data["validField"])
+    }
+
+    @Test
+    fun `toKafkaPayload should handle clsData with only ID fields`() {
+        // Given
+        val clsData = mapOf(
+            "persAcctSalesforceID" to "SF_123",
+            "persAcctType" to "PERSONAL",
+            "persAcctCLSAccountID" to "CLS_123"
+        )
+        
+        val crmClsCustomerData = CrmClsCustomerData(
+            batchId = 1L,
+            reconciliationId = ReconciliationId("batch-ref", "row-ref"),
+            rowNumber = 1,
+            rowReference = "row-ref",
+            crmData = CrmData(), 
+            clsData = clsData,
+            crmInsertedId = null
+        )
+
+        // When
+        val result = crmClsCustomerData.toKafkaPayload()
+
+        // Then
+        assertEquals("SF_123", result.persAcctSalesforceID)
+        assertEquals("PERSONAL", result.persAcctType)
+        assertEquals("CLS_123", result.persAcctCLSAccountID)
+        assertTrue(result.data.isEmpty()) // Seuls les IDs, donc data doit être vide
+    }
+
+    @Test
+    fun `toKafkaPayload should handle completely empty clsData`() {
+        // Given
+        val crmClsCustomerData = CrmClsCustomerData(
+            batchId = 1L,
+            reconciliationId = ReconciliationId("batch-ref", "row-ref"),
+            rowNumber = 1,
+            rowReference = "row-ref",
+            crmData = CrmData(),
+            clsData = emptyMap(), // clsData vide
+            crmInsertedId = null
+        )
+
+        // When
+        val result = crmClsCustomerData.toKafkaPayload()
+
+        // Then
+        assertNull(result.persAcctSalesforceID)
+        assertNull(result.persAcctType)
+        assertNull(result.persAcctCLSAccountID)
+        assertTrue(result.data.isEmpty())
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        // additionalFieldKey, additionalFieldValue
+        "customField1, customValue1",
+        "customField2, customValue2", 
+        "nested.field, nestedValue",
+        "special-chars, value@with#special$chars",
+        "unicodeField, 测试值",
+        "numberField, 12345"
+    )
+    fun `toKafkaPayload should preserve various field types`(
+        additionalFieldKey: String,
+        additionalFieldValue: String
+    ) {
+        // Given
+        val clsData = mapOf(
+            "persAcctSalesforceID" to "SF_123",
+            "persAcctType" to "PERSONAL",
+            "persAcctCLSAccountID" to "CLS_123",
+            additionalFieldKey to additionalFieldValue
+        )
+        
+        val crmClsCustomerData = CrmClsCustomerData(
+            batchId = 1L,
+            reconciliationId = ReconciliationId("batch-ref", "row-ref"),
+            rowNumber = 1,
+            rowReference = "row-ref",
+            crmData = CrmData(),
+            clsData = clsData,
+            crmInsertedId = null
+        )
+
+        // When
+        val result = crmClsCustomerData.toKafkaPayload()
+
+        // Then
+        assertEquals(additionalFieldValue, result.data[additionalFieldKey])
+    }
+
+    // ==================== TESTS POUR ClsCustomerDataKafkaMessage ====================
+
+    @Test
+    fun `ClsCustomerDataKafkaMessage should create with all fields`() {
+        // Given
+        val persAcctSalesforceID = "SF_123"
+        val persAcctType = "PERSONAL"
+        val persAcctCLSAccountID = "CLS_123"
+        val data = mapOf("field1" to "value1", "field2" to "value2")
+
+        // When
+        val kafkaMessage = ClsCustomerDataKafkaMessage(
+            persAcctSalesforceID = persAcctSalesforceID,
+            persAcctType = persAcctType,
+            persAcctCLSAccountID = persAcctCLSAccountID,
+            data = data
+        )
+
+        // Then
+        assertEquals(persAcctSalesforceID, kafkaMessage.persAcctSalesforceID)
+        assertEquals(persAcctType, kafkaMessage.persAcctType)
+        assertEquals(persAcctCLSAccountID, kafkaMessage.persAcctCLSAccountID)
+        assertEquals(data, kafkaMessage.data)
+    }
+
+    @Test
+    fun `ClsCustomerDataKafkaMessage should handle null fields`() {
+        // When
+        val kafkaMessage = ClsCustomerDataKafkaMessage(
+            persAcctSalesforceID = null,
+            persAcctType = null,
+            persAcctCLSAccountID = null,
+            data = emptyMap()
+        )
+
+        // Then
+        assertNull(kafkaMessage.persAcctSalesforceID)
+        assertNull(kafkaMessage.persAcctType)
+        assertNull(kafkaMessage.persAcctCLSAccountID)
+        assertTrue(kafkaMessage.data.isEmpty())
+    }
+}
