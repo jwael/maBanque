@@ -1,0 +1,59 @@
+@ParameterizedTest
+@CsvSource(
+    // contactRole, startDate, endDate, roleId, expectedStatus, responseStatus
+    "PARTNER, 01/01/2024, 31/12/2024, ROLE_PARTNER_123, OK, OK",
+    "MANAGER, 01/01/2024, null, ROLE_MANAGER_456, OK, OK", 
+    "ADMIN, 01/01/2024, 30/06/2024, ROLE_ADMIN_789, WARNING, WARNING"
+)
+fun `updateCrmRole with successful response should return correct payload`(
+    contactRole: String,
+    startDate: String,  
+    endDate: String?,   
+    roleId: String,
+    expectedStatus: String,
+    responseStatus: String
+) {
+    // Given
+    val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+    
+    val roleData = createCrmRoleData(
+        contactRole = contactRole,
+        // MÊME gestion des "null" que dans createCrmRole
+        startDate = if (startDate == "null") null else LocalDate.parse(startDate, dateFormatter),
+        endDate = if (endDate == "null") null else endDate?.let { LocalDate.parse(it, dateFormatter) },
+        salesforceRoleId = roleId
+    )
+    
+    val roleResponse = RoleResponse(
+        status = responseStatus,
+        message = "Update successful",
+        roleId = roleId
+    )
+    val rolesResponse = RolesResponse(roles = listOf(roleResponse))
+    
+    every { 
+        crmClient.updateRole(
+            correlationId = any(),
+            contactId = "CONTACT_123",
+            roleId = roleId,
+            roleRequest = any()
+        ).execute() 
+    } returns Response.success(rolesResponse)
+
+    // When
+    val result = adapter.updateCrmRole(roleData)
+
+    // Then
+    assertEquals(roleId, result.crmRoleId)
+    assertEquals(RecordStepStatus.valueOf(expectedStatus), result.crmStatus)
+    assertEquals("Update successful", result.crmMessage)
+    
+    verify { 
+        crmClient.updateRole(
+            correlationId = any(),
+            contactId = "CONTACT_123", 
+            roleId = roleId,
+            roleRequest = any()
+        ).execute() 
+    }
+}
