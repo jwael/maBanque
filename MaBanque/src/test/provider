@@ -1,0 +1,183 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.assertj.core.api.Assertions.assertThat
+import java.time.LocalDate
+
+class CrmCustomerProviderAdapterTest {
+
+    private lateinit var crmClient: CrmClient
+    private lateinit var adapter: CrmCustomerProviderAdapter
+
+    @BeforeEach
+    fun setUp() {
+        crmClient = mockk(relaxed = true)
+        adapter = CrmCustomerProviderAdapter(crmClient)
+    }
+
+    @Nested
+    inner class CreateCustomerTests {
+
+        @ParameterizedTest
+        @CsvSource(
+            "CONTACT123, false, OK",
+            "CONTACT456, false, KO",
+            "CONTACT789, false, OK"
+        )
+        fun `should create CRM customer correctly`(
+            salesforceContactId: String,
+            isCrmUpdate: Boolean,
+            expectedStatus: String
+        ) {
+            // GIVEN
+            val crmClsCustomerData = mockk<CrmClsCustomerData>()
+            every { crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = isCrmUpdate) } returns
+                CrmCustomerRequest(
+                    correlationId = "correlation123",
+                    data = mockk()
+                )
+
+            val mockResponse = mockk<retrofit2.Response<CrmCustomerResponse>>()
+            every { mockResponse.isSuccessful } returns (expectedStatus == "OK")
+            every { mockResponse.body() } returns
+                if (expectedStatus == "OK") CrmCustomerResponse(status = "OK", accountId = "ACC123", roles = null, message = "Created") else null
+            every { mockResponse.errorBody()?.charStream()?.readText() } returns "Some error"
+
+            every { crmClient.createCustomer(any(), any()) } returns mockResponse
+
+            // WHEN
+            val result = adapter.createCrmCustomer(crmClsCustomerData)
+
+            // THEN
+            if (expectedStatus == "OK") {
+                assertThat(result.crmStatus.name).isEqualTo("OK")
+                assertThat(result.crmAccountId).isEqualTo("ACC123")
+            } else {
+                assertThat(result.crmStatus.name).isEqualTo("KO")
+                assertThat(result.crmMessage).contains("Some error")
+            }
+
+            verify { crmClient.createCustomer(any(), any()) }
+        }
+    }
+
+    @Nested
+    inner class UpdateCustomerTests {
+
+        @ParameterizedTest
+        @CsvSource(
+            "CONTACT123, OK",
+            "CONTACT456, KO"
+        )
+        fun `should update CRM customer correctly`(
+            salesforceContactId: String,
+            expectedStatus: String
+        ) {
+            val crmClsCustomerData = mockk<CrmClsCustomerData>()
+            every { crmClsCustomerData.crmData.salesforceAccountId!! } returns "ACC123"
+            every { crmClsCustomerData.toCrmCustomerRequest(isCrmUpdate = true) } returns
+                CrmCustomerRequest("corrId", mockk())
+
+            val mockResponse = mockk<retrofit2.Response<CrmCustomerResponse>>()
+            every { mockResponse.isSuccessful } returns (expectedStatus == "OK")
+            every { mockResponse.body() } returns
+                if (expectedStatus == "OK") CrmCustomerResponse(status = "OK", accountId = "ACC123", roles = null, message = "Updated") else null
+            every { mockResponse.errorBody()?.charStream()?.readText() } returns "Some error"
+
+            every { crmClient.updateCustomer(any(), any(), any()) } returns mockResponse
+
+            val result = adapter.updateCrmCustomer(crmClsCustomerData)
+
+            if (expectedStatus == "OK") {
+                assertThat(result.crmStatus.name).isEqualTo("OK")
+                assertThat(result.crmAccountId).isEqualTo("ACC123")
+            } else {
+                assertThat(result.crmStatus.name).isEqualTo("KO")
+                assertThat(result.crmMessage).contains("Some error")
+            }
+
+            verify { crmClient.updateCustomer(any(), any(), any()) }
+        }
+    }
+
+    @Nested
+    inner class CreateRoleTests {
+
+        @ParameterizedTest
+        @CsvSource(
+            "CONTACT123, ROLE001, OK",
+            "CONTACT456, ROLE002, KO"
+        )
+        fun `should create CRM role correctly`(
+            contactId: String,
+            roleId: String?,
+            expectedStatus: String
+        ) {
+            val crmRoleData = mockk<CrmRoleData>()
+            every { crmRoleData.crmCustomerData?.salesforceContactId!! } returns contactId
+            every { crmRoleData.toCrmCustomerRoleRequest() } returns CrmRoleRequest("corrId", mockk())
+
+            val mockResponse = mockk<retrofit2.Response<CrmRoleResponse>>()
+            every { mockResponse.isSuccessful } returns (expectedStatus == "OK")
+            every { mockResponse.body() } returns
+                if (expectedStatus == "OK") CrmRoleResponse(status = "OK", roleId = roleId, message = "Role created") else null
+            every { mockResponse.errorBody()?.charStream()?.readText() } returns "Some error"
+
+            every { crmClient.createRole(any(), any(), any()) } returns mockResponse
+
+            val result = adapter.createCrmRole(crmRoleData)
+
+            if (expectedStatus == "OK") {
+                assertThat(result.crmStatus.name).isEqualTo("OK")
+                assertThat(result.crmRoleId).isEqualTo(roleId)
+            } else {
+                assertThat(result.crmStatus.name).isEqualTo("KO")
+                assertThat(result.crmMessage).contains("Some error")
+            }
+
+            verify { crmClient.createRole(any(), any(), any()) }
+        }
+    }
+
+    @Nested
+    inner class UpdateRoleTests {
+
+        @ParameterizedTest
+        @CsvSource(
+            "CONTACT123, ROLE001, OK",
+            "CONTACT456, ROLE002, KO"
+        )
+        fun `should update CRM role correctly`(
+            contactId: String,
+            roleId: String?,
+            expectedStatus: String
+        ) {
+            val crmRoleData = mockk<CrmRoleData>()
+            every { crmRoleData.crmCustomerData?.salesforceContactId!! } returns contactId
+            every { crmRoleData.crmCustomerData?.salesforceRoleId!! } returns roleId
+            every { crmRoleData.toCrmCustomerRoleUpdateRequest() } returns CrmRoleUpdateRequest("corrId", mockk())
+
+            val mockResponse = mockk<retrofit2.Response<CrmRoleResponse>>()
+            every { mockResponse.isSuccessful } returns (expectedStatus == "OK")
+            every { mockResponse.body() } returns
+                if (expectedStatus == "OK") CrmRoleResponse(status = "OK", roleId = roleId, message = "Role updated") else null
+            every { mockResponse.errorBody()?.charStream()?.readText() } returns "Some error"
+
+            every { crmClient.updateRole(any(), any(), any(), any()) } returns mockResponse
+
+            val result = adapter.updateCrmRole(crmRoleData)
+
+            if (expectedStatus == "OK") {
+                assertThat(result.crmStatus.name).isEqualTo("OK")
+                assertThat(result.crmRoleId).isEqualTo(roleId)
+            } else {
+                assertThat(result.crmStatus.name).isEqualTo("KO")
+                assertThat(result.crmMessage).contains("Some error")
+            }
+
+            verify { crmClient.updateRole(any(), any(), any(), any()) }
+        }
+    }
+}
