@@ -1,0 +1,57 @@
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+
+class CrmCustomerRequestTest {
+
+    @ParameterizedTest
+    @CsvSource(
+        "null, null, null, null, null, null, null, null, true",
+        "10, Rue A, Paris, IDF, 75000, FRANCE, null, null, false",
+        "null, null, null, null, null, null, 99, Rue B, false"
+    )
+    fun `should create addresses correctly`(
+        personalStreetNumber: String?,
+        personalStreet: String?,
+        personalCity: String?,
+        personalProvince: String?,
+        personalZip: String?,
+        personalCountry: String?,
+        professionalStreetNumber: String?,
+        professionalStreet: String?,
+        expectedNull: Boolean
+    ) {
+        // GIVEN
+        val crmData = CrmData(
+            dynPersonalStreetNumber = personalStreetNumber,
+            personalStreet = personalStreet,
+            personalCity = personalCity,
+            personalProvince = personalProvince,
+            personalZipPostalCode = personalZip,
+            personalCountry = personalCountry,
+            dynProfessionalStreetNumber = professionalStreetNumber,
+            street = professionalStreet,
+            city = personalCity,
+            professionalProvince = personalProvince,
+            postalCode = personalZip,
+            country = personalCountry
+        )
+
+        // WHEN: réflexion sur la vraie classe de fichier Kotlin
+        val method = CrmCustomerRequestKt::class.java.getDeclaredMethod(
+            "createAddresses",
+            CrmData::class.java
+        ).apply { isAccessible = true }
+
+        val result = method.invoke(null, crmData) as CustomerAddresses?
+
+        // THEN
+        if (expectedNull) {
+            assertThat(result).isNull()
+        } else {
+            assertThat(result).isNotNull
+            assertThat(result?.primary).isNotNull
+            // tu peux ajouter d'autres assertions sur les champs ici
+        }
+    }
+}
