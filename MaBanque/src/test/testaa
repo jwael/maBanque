@@ -1,0 +1,310 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.springframework.kafka.core.KafkaTemplate
+import org.springframework.kafka.support.KafkaHeaders
+import org.springframework.messaging.Message
+import org.springframework.messaging.MessageHeaders
+import org.springframework.messaging.support.MessageBuilder
+import org.springframework.messaging.support.GenericMessage
+import org.springframework.kafka.support.SendResult
+import java.util.concurrent.CompletableFuture
+import kotlin.test.assertEquals
+import kotlin.test.assertThrows
+
+class ClsProviderAdapterTest {
+
+    private val kafkaContactTemplate = mockk<KafkaTemplate<String, ClsContactDataKafkaMessage>>()
+    private val kafkaCustomerTemplate = mockk<KafkaTemplate<String, ClsCustomerDataKafkaMessage>>()
+    
+    private lateinit var adapter: ClsProviderAdapter
+
+    @BeforeEach
+    fun setUp() {
+        clearAllMocks()
+        adapter = ClsProviderAdapter(kafkaContactTemplate, kafkaCustomerTemplate)
+        adapter.sendingContactTopicName = "contact-topic"
+    }
+
+    // ==================== TESTS PARAMÉTRÉS POUR sendContactToCls ====================
+
+    @ParameterizedTest
+    @CsvSource(
+        // countryCode, reconciliationId, contactId
+        "FR, BATCH_REF01-ROW_REF001, CONTACT_123",
+        "US, BATCH_REF02-ROW_REF002, CONTACT_456", 
+        "DE, BATCH_REF03-ROW_REF003, CONTACT_789",
+        "ES, BATCH_REF04-ROW_REF004, CONTACT_TEST"
+    )
+    fun `sendContactToCls should send message with correct headers and payload`(
+        countryCode: String,
+        reconciliationId: String,
+        contactId: String
+    ) {
+        // Given
+        val crmClsContactData = createCrmClsContactData(
+            reconciliationId = reconciliationId,
+            contactId = contactId
+        )
+        val country = CountryCode(countryCode)
+        val kafkaMessage = mockk<ClsContactDataKafkaMessage>()
+        val message = mockk<GenericMessage<ClsContactDataKafkaMessage>>(relaxed = true)
+        val sendResult = mockk<SendResult<String, ClsContactDataKafkaMessage>>()
+        val future = CompletableFuture.completedFuture(sendResult)
+        
+        every { crmClsContactData.toKafkaPayload() } returns kafkaMessage
+        every { 
+            MessageBuilder.withPayload(kafkaMessage)
+                .setHeader(KafkaHeaders.TOPIC, "contact-topic")
+                .setHeader("country", countryCode)
+                .setHeader("reconciliationId", reconciliationId)
+                .build()
+        } returns message
+        every { kafkaContactTemplate.send(message) } returns future
+        every { future.thenRun(any()) } returns future
+
+        // When
+        adapter.sendContactToCls(crmClsContactData, country)
+
+        // Then
+        verify { 
+            MessageBuilder.withPayload(kafkaMessage)
+                .setHeader(KafkaHeaders.TOPIC, "contact-topic")
+                .setHeader("country", countryCode)
+                .setHeader("reconciliationId", reconciliationId)
+                .build()
+        }
+        verify { kafkaContactTemplate.send(message) }
+        verify { future.thenRun(any()) }
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        // exceptionMessage
+        "Kafka broker not available",
+        "Serialization error",
+        "Network timeout",
+        "Topic does not exist"
+    )
+    fun `sendContactToCls should throw exception when kafka send fails`(exceptionMessage: String) {
+        // Given
+        val crmClsContactData = createCrmClsContactData()
+        val country = CountryCode("FR")
+        val kafkaMessage = mockk<ClsContactDataKafkaMessage>()
+        val message = mockk<GenericMessage<ClsContactDataKafkaMessage>>(relaxed = true)
+        
+        every { crmClsContactData.toKafkaPayload() } returns kafkaMessage
+        every { 
+            MessageBuilder.withPayload(kafkaMessage)
+                .setHeader(any<String>(), any())
+                .build()
+        } returns message
+        every { kafkaContactTemplate.send(message) } throws RuntimeException(exceptionMessage)
+
+        // When & Then
+        val exception = assertThrows<RuntimeException> {
+            adapter.sendContactToCls(crmClsContactData, country)
+        }
+        assertEquals(exceptionMessage, exception.message)
+        
+        verify { kafkaContactTemplate.send(message) }
+    }
+
+    // ==================== TESTS PARAMÉTRÉS POUR sendCustomerToCls ====================
+
+    @ParameterizedTest
+    @CsvSource(
+        // topicName, countryCode, reconciliationId, customerId
+        "customer-topic, FR, BATCH_REF01-ROW_REF001, CUSTOMER_123",
+        "partner-topic, US, BATCH_REF02-ROW_REF002, CUSTOMER_456",
+        "business-topic, DE, BATCH_REF03-ROW_REF003, CUSTOMER_789", 
+        "premium-topic, ES, BATCH_REF04-ROW_REF004, CUSTOMER_TEST"
+    )
+    fun `sendCustomerToCls should send message with correct headers and payload`(
+        topicName: String,
+        countryCode: String,
+        reconciliationId: String,
+        customerId: String
+    ) {
+        // Given
+        val crmClsCustomerData = createCrmClsCustomerData(
+            reconciliationId = reconciliationId,
+            customerId = customerId
+        )
+        val kafkaMessage = mockk<ClsCustomerDataKafkaMessage>()
+        val message = mockk<GenericMessage<ClsCustomerDataKafkaMessage>>(relaxed = true)
+        val sendResult = mockk<SendResult<String, ClsCustomerDataKafkaMessage>>()
+        val future = CompletableFuture.completedFuture(sendResult)
+        
+        every { crmClsCustomerData.toKafkaPayload() } returns kafkaMessage
+        every { 
+            MessageBuilder.withPayload(kafkaMessage)
+                .setHeader(KafkaHeaders.TOPIC, topicName)
+                .setHeader("country", countryCode)
+                .setHeader("reconciliationId", reconciliationId)
+                .build()
+        } returns message
+        every { kafkaCustomerTemplate.send(message) } returns future
+        every { future.thenRun(any()) } returns future
+
+        // When
+        adapter.sendCustomerToCls(topicName, countryCode, crmClsCustomerData)
+
+        // Then
+        verify { 
+            MessageBuilder.withPayload(kafkaMessage)
+                .setHeader(KafkaHeaders.TOPIC, topicName)
+                .setHeader("country", countryCode)
+                .setHeader("reconciliationId", reconciliationId)
+                .build()
+        }
+        verify { kafkaCustomerTemplate.send(message) }
+        verify { future.thenRun(any()) }
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        // topicName, countryCode, exceptionMessage
+        "customer-topic, FR, Kafka broker not available",
+        "partner-topic, US, Serialization error", 
+        "business-topic, DE, Network timeout",
+        "premium-topic, ES, Topic does not exist"
+    )
+    fun `sendCustomerToCls should throw exception when kafka send fails`(
+        topicName: String,
+        countryCode: String,
+        exceptionMessage: String
+    ) {
+        // Given
+        val crmClsCustomerData = createCrmClsCustomerData()
+        val kafkaMessage = mockk<ClsCustomerDataKafkaMessage>()
+        val message = mockk<GenericMessage<ClsCustomerDataKafkaMessage>>(relaxed = true)
+        
+        every { crmClsCustomerData.toKafkaPayload() } returns kafkaMessage
+        every { 
+            MessageBuilder.withPayload(kafkaMessage)
+                .setHeader(any<String>(), any())
+                .build()
+        } returns message
+        every { kafkaCustomerTemplate.send(message) } throws RuntimeException(exceptionMessage)
+
+        // When & Then
+        val exception = assertThrows<RuntimeException> {
+            adapter.sendCustomerToCls(topicName, countryCode, crmClsCustomerData)
+        }
+        assertEquals(exceptionMessage, exception.message)
+        
+        verify { kafkaCustomerTemplate.send(message) }
+    }
+
+    // ==================== TESTS DES CAS LIMITES ====================
+
+    @Test
+    fun `sendContactToCls should handle empty reconciliationId`() {
+        // Given
+        val crmClsContactData = createCrmClsContactData(reconciliationId = "")
+        val country = CountryCode("FR")
+        val kafkaMessage = mockk<ClsContactDataKafkaMessage>()
+        val message = mockk<GenericMessage<ClsContactDataKafkaMessage>>(relaxed = true)
+        val sendResult = mockk<SendResult<String, ClsContactDataKafkaMessage>>()
+        val future = CompletableFuture.completedFuture(sendResult)
+        
+        every { crmClsContactData.toKafkaPayload() } returns kafkaMessage
+        every { 
+            MessageBuilder.withPayload(kafkaMessage)
+                .setHeader(KafkaHeaders.TOPIC, "contact-topic")
+                .setHeader("country", "FR")
+                .setHeader("reconciliationId", "")
+                .build()
+        } returns message
+        every { kafkaContactTemplate.send(message) } returns future
+        every { future.thenRun(any()) } returns future
+
+        // When
+        adapter.sendContactToCls(crmClsContactData, country)
+
+        // Then
+        verify { 
+            MessageBuilder.withPayload(kafkaMessage)
+                .setHeader("reconciliationId", "")
+                .build()
+        }
+    }
+
+    @Test
+    fun `sendCustomerToCls should handle special characters in country code`() {
+        // Given
+        val crmClsCustomerData = createCrmClsCustomerData()
+        val kafkaMessage = mockk<ClsCustomerDataKafkaMessage>()
+        val message = mockk<GenericMessage<ClsCustomerDataKafkaMessage>>(relaxed = true)
+        val sendResult = mockk<SendResult<String, ClsCustomerDataKafkaMessage>>()
+        val future = CompletableFuture.completedFuture(sendResult)
+        
+        every { crmClsCustomerData.toKafkaPayload() } returns kafkaMessage
+        every { 
+            MessageBuilder.withPayload(kafkaMessage)
+                .setHeader(KafkaHeaders.TOPIC, "test-topic")
+                .setHeader("country", "US-CA")
+                .setHeader("reconciliationId", "BATCH_REF01-ROW_REF001")
+                .build()
+        } returns message
+        every { kafkaCustomerTemplate.send(message) } returns future
+        every { future.thenRun(any()) } returns future
+
+        // When
+        adapter.sendCustomerToCls("test-topic", "US-CA", crmClsCustomerData)
+
+        // Then
+        verify { 
+            MessageBuilder.withPayload(kafkaMessage)
+                .setHeader("country", "US-CA")
+                .build()
+        }
+    }
+
+    // ==================== MÉTHODES UTILITAIRES ====================
+
+    private fun createCrmClsContactData(
+        reconciliationId: String = "BATCH_REF01-ROW_REF001",
+        contactId: String = "CONTACT_123"
+    ): CrmClsContactData {
+        return CrmClsContactData(
+            id = contactId,
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId(value = "BATCH_REF01"),  // 10 caractères
+                rowReference = ReferenceId(value = "ROW_REF001")     // 10 caractères
+            ),
+            batchId = 1L,
+            rowNumber = 1,
+            rowReference = ReferenceId(value = "ROW_REF001"),        // 10 caractères
+            crmData = com.arval.blm.core.domain.model.contact.CrmData(),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        ).apply {
+            every { this@apply.reconciliationId.print() } returns reconciliationId
+        }
+    }
+
+    private fun createCrmClsCustomerData(
+        reconciliationId: String = "BATCH_REF01-ROW_REF001", 
+        customerId: String = "CUSTOMER_123"
+    ): CrmClsCustomerData {
+        return CrmClsCustomerData(
+            id = customerId,
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId(value = "BATCH_REF01"),  // 10 caractères
+                rowReference = ReferenceId(value = "ROW_REF001")     // 10 caractères
+            ),
+            batchId = 1L,
+            rowNumber = 1,
+            rowReference = ReferenceId(value = "ROW_REF001"),        // 10 caractères
+            crmData = com.arval.blm.core.domain.model.customer.CrmData(),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        ).apply {
+            every { this@apply.reconciliationId.print() } returns reconciliationId
+        }
+    }
+}
