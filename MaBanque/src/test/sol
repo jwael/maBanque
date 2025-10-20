@@ -1,0 +1,70 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.assertj.core.api.Assertions.assertThat
+
+class CrmCustomerRequestTest {
+
+    // Helper object pour accéder à la fonction privée sans reflection
+    object CrmCustomerRequestHelper {
+        fun createAddresses(crmData: CrmData): CustomerAddresses? = with(crmData) {
+            fun addressOf(
+                streetNumber: String?, street: String?, city: String?,
+                province: String?, postal: String?, countryName: String?
+            ): CustomerAddress? =
+                if (listOf(streetNumber, street, city, province, postal, countryName).all { it.isNullOrBlank() }) null
+                else CustomerAddress(
+                    streetNumber = streetNumber,
+                    street = street,
+                    city = city,
+                    province = province,
+                    zipPostalCode = postal,
+                    country = countryName
+                )
+
+            val personal = addressOf(
+                dynPersonalStreetNumber, personalStreet, personalCity,
+                personalProvince, personalZipPostalCode, personalCountry
+            )
+            val professional = addressOf(
+                dynProfessionalStreetNumber, street, city, professionalProvince,
+                postalCode, country
+            )
+
+            if (personal == null && professional == null) null
+            else CustomerAddresses(primary = personal, secondary = professional)
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "null,null,null,null,null,null,null,null,true",
+        "10,Rue A,Paris,IDF,75000,FRANCE,null,null,false",
+        "null,null,null,null,null,null,99,Rue B,false"
+    )
+    fun `should create addresses correctly`(
+        personalStreetNumber: String?, personalStreet: String?, personalCity: String?, personalProvince: String?,
+        personalZip: String?, personalCountry: String?, professionalStreetNumber: String?, professionalStreet: String?,
+        expectedNull: Boolean
+    ) {
+        val crmData = CrmData(
+            dynPersonalStreetNumber = personalStreetNumber,
+            personalStreet = personalStreet,
+            personalCity = personalCity,
+            personalProvince = personalProvince,
+            personalZipPostalCode = personalZip,
+            personalCountry = personalCountry,
+            dynProfessionalStreetNumber = professionalStreetNumber,
+            street = professionalStreet,
+            city = personalCity,
+            professionalProvince = personalProvince,
+            postalCode = personalZip,
+            country = personalCountry
+        )
+
+        val result = CrmCustomerRequestHelper.createAddresses(crmData)
+
+        if (expectedNull) assertThat(result).isNull()
+        else assertThat(result).isNotNull
+    }
+}
