@@ -1,0 +1,174 @@
+// ==================== TESTS MANQUANTS POUR createCrmCustomer ====================
+
+@Test
+fun `createCrmCustomer with successful response should return correct payload`() {
+    // Given
+    val customerData = createCrmClsCustomerData()
+    val customerResponse = CrmCustomerResponse(
+        status = "OK",
+        message = "Customer created",
+        accountId = "ACC_123",
+        roleId = "ROLE_123"
+    )
+    
+    every { 
+        crmClient.createCustomer(any(), any()).execute() 
+    } returns Response.success(customerResponse)
+
+    // When
+    val result = adapter.createCrmCustomer(customerData)
+
+    // Then
+    assertEquals("ACC_123", result.crmAccountId)
+    assertEquals(RecordStepStatus.OK, result.crmStatus)
+    assertEquals("Customer created", result.crmMessage)
+}
+
+@Test
+fun `createCrmCustomer with error response should return KO status`() {
+    // Given
+    val customerData = createCrmClsCustomerData()
+    
+    every { 
+        crmClient.createCustomer(any(), any()).execute() 
+    } returns Response.error(400, mockErrorResponseBody("Validation error"))
+
+    // When
+    val result = adapter.createCrmCustomer(customerData)
+
+    // Then
+    assertEquals(RecordStepStatus.KO, result.crmStatus)
+    assertEquals("Validation error", result.crmMessage)
+}
+
+@Test
+fun `createCrmCustomer with exception should return KO status`() {
+    // Given
+    val customerData = createCrmClsCustomerData()
+    
+    every { 
+        crmClient.createCustomer(any(), any()).execute() 
+    } throws IOException("Network error")
+
+    // When
+    val result = adapter.createCrmCustomer(customerData)
+
+    // Then
+    assertEquals(RecordStepStatus.KO, result.crmStatus)
+    assertTrue(result.crmMessage!!.contains("BLM Exception"))
+}
+
+// ==================== TESTS MANQUANTS POUR updateCrmCustomer ====================
+
+@Test
+fun `updateCrmCustomer with successful response should return correct payload`() {
+    // Given
+    val customerData = createCrmClsCustomerData(salesforceAccountId = "EXISTING_ACC")
+    val customerResponse = CrmCustomerResponse(
+        status = "OK", 
+        message = "Customer updated",
+        accountId = "EXISTING_ACC"
+    )
+    
+    every { 
+        crmClient.updateCustomer(any(), any(), any()).execute() 
+    } returns Response.success(customerResponse)
+
+    // When
+    val result = adapter.updateCrmCustomer(customerData)
+
+    // Then
+    assertEquals("EXISTING_ACC", result.crmAccountId)
+    assertEquals(RecordStepStatus.OK, result.crmStatus)
+}
+
+@Test
+fun `updateCrmCustomer without salesforceAccountId should return KO status`() {
+    // Given
+    val customerData = createCrmClsCustomerData(salesforceAccountId = null)
+
+    // When
+    val result = adapter.updateCrmCustomer(customerData)
+
+    // Then
+    assertEquals(RecordStepStatus.KO, result.crmStatus)
+    assertTrue(result.crmMessage!!.contains("BLM Exception"))
+}
+
+// ==================== TESTS SUPPLÉMENTAIRES POUR LES CHEMINS D'ERREUR ====================
+
+@Test
+fun `createCrmRole with network exception should return KO status`() {
+    // Given
+    val roleData = createCrmRoleData()
+    
+    every { 
+        crmClient.createRole(any(), any(), any()).execute() 
+    } throws IOException("Network error")
+
+    // When
+    val result = adapter.createCrmRole(roleData)
+
+    // Then
+    assertEquals(RecordStepStatus.KO, result.crmStatus)
+    assertTrue(result.crmMessage!!.contains("BLM Exception"))
+}
+
+@Test
+fun `updateCrmRole with network exception should return KO status`() {
+    // Given
+    val roleData = createCrmRoleData(salesforceRoleId = "EXISTING_ROLE")
+    
+    every { 
+        crmClient.updateRole(any(), any(), any(), any()).execute() 
+    } throws IOException("Network error")
+
+    // When
+    val result = adapter.updateCrmRole(roleData)
+
+    // Then
+    assertEquals(RecordStepStatus.KO, result.crmStatus)
+    assertTrue(result.crmMessage!!.contains("BLM Exception"))
+}
+
+@Test
+fun `createCrmRole with unknown status should return WARNING status`() {
+    // Given
+    val roleData = createCrmRoleData()
+    val roleResponse = RoleResponse(status = "UNKNOWN", message = "Test", roleId = "123")
+    val rolesResponse = RolesResponse(roles = listOf(roleResponse))
+    
+    every { 
+        crmClient.createRole(any(), any(), any()).execute() 
+    } returns Response.success(rolesResponse)
+
+    // When
+    val result = adapter.createCrmRole(roleData)
+
+    // Then
+    assertEquals(RecordStepStatus.WARNING, result.crmStatus)
+    assertEquals("Test", result.crmMessage)
+}
+
+// ==================== MÉTHODE UTILITAIRE SUPPLÉMENTAIRE ====================
+
+private fun createCrmClsCustomerData(
+    salesforceAccountId: String? = "ACC_123"
+): CrmClsCustomerData {
+    val crmData = CrmData(
+        firstName = "Test",
+        surname = "User", 
+        email = "test@test.com",
+        salesforceAccountId = salesforceAccountId
+    )
+    
+    return CrmClsCustomerData(
+        batchId = 1L,
+        reconciliationId = ReconciliationId("batch-ref", "row-ref"),
+        rowNumber = 1,
+        rowReference = "row-ref",
+        crmData = crmData,
+        clsData = emptyMap(),
+        crmInsertedId = null
+    )
+}
