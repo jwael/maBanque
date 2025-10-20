@@ -1,0 +1,176 @@
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.LocalDate
+
+class CrmRoleDataExtensionsTest {
+
+    @ParameterizedTest
+    @CsvSource(
+        // startDate, endDate, contactRole, kycType, authorizedSignature, salesforceAccountId, mainContact
+        "2024-01-01, 2024-12-31, PARTNER, KYC_LEVEL_1, true, ACC_123, true",
+        "2024-01-01, null, MANAGER, KYC_LEVEL_2, false, ACC_456, false", 
+        "null, 2024-12-31, ADMIN, null, true, ACC_789, true",
+        "null, null, USER, KYC_LEVEL_3, false, null, null"
+    )
+    fun `toCrmCustomerRoleRequest should map fields correctly`(
+        startDate: String?,
+        endDate: String?,
+        contactRole: String?,
+        kycType: String?,
+        authorizedSignature: Boolean?,
+        salesforceAccountId: String?,
+        mainContact: Boolean?
+    ) {
+        // Given
+        val crmRoleData = createCrmRoleData(
+            startDate = if (startDate == "null") null else LocalDate.parse(startDate),
+            endDate = if (endDate == "null") null else LocalDate.parse(endDate),
+            contactRole = if (contactRole == "null") null else contactRole,
+            kycType = if (kycType == "null") null else kycType,
+            authorizedSignature = authorizedSignature?.takeIf { it != "null" }?.toBoolean(),
+            salesforceAccountId = if (salesforceAccountId == "null") null else salesforceAccountId,
+            mainContact = mainContact?.takeIf { it != "null" }?.toBoolean()
+        )
+
+        // When
+        val result = crmRoleData.toCrmCustomerRoleRequest()
+
+        // Then
+        assertEquals("BATCH_REF", result.correlationId)
+        assertNotNull(result.data.roles)
+        assertEquals(1, result.data.roles!!.size)
+        
+        val crmRole = result.data.roles!!.first()
+        assertEquals(startDate?.takeIf { it != "null" }, crmRole.startDate)
+        assertEquals(endDate?.takeIf { it != "null" }, crmRole.endDate)
+        assertEquals(contactRole?.takeIf { it != "null" }, crmRole.roleCode)
+        assertEquals(kycType?.takeIf { it != "null" }, crmRole.kycType)
+        assertEquals(authorizedSignature?.takeIf { it != "null" }?.toBoolean(), crmRole.authorizedSignature)
+        assertEquals(salesforceAccountId?.takeIf { it != "null" }, crmRole.relatedAccountId)
+        assertEquals(mainContact?.takeIf { it != "null" }?.toBoolean(), crmRole.isMainContact)
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        // startDate, endDate, contactRole, authorizedSignature, salesforceAccountId, mainContact
+        "2024-01-01, 2024-12-31, PARTNER, true, ACC_123, true",
+        "2024-01-01, null, MANAGER, false, ACC_456, false",
+        "null, 2024-12-31, ADMIN, true, ACC_789, true", 
+        "null, null, USER, false, null, null"
+    )
+    fun `toCrmCustomerRoleUpdateRequest should map fields correctly`(
+        startDate: String?,
+        endDate: String?,
+        contactRole: String?,
+        authorizedSignature: Boolean?,
+        salesforceAccountId: String?,
+        mainContact: Boolean?
+    ) {
+        // Given
+        val crmRoleData = createCrmRoleData(
+            startDate = if (startDate == "null") null else LocalDate.parse(startDate),
+            endDate = if (endDate == "null") null else LocalDate.parse(endDate),
+            contactRole = if (contactRole == "null") null else contactRole,
+            authorizedSignature = authorizedSignature?.takeIf { it != "null" }?.toBoolean(),
+            salesforceAccountId = if (salesforceAccountId == "null") null else salesforceAccountId,
+            mainContact = mainContact?.takeIf { it != "null" }?.toBoolean()
+        )
+
+        // When
+        val result = crmRoleData.toCrmCustomerRoleUpdateRequest()
+
+        // Then
+        assertEquals("BATCH_REF", result.correlationId)
+        assertEquals(startDate?.takeIf { it != "null" }, result.data.startDate)
+        assertEquals(endDate?.takeIf { it != "null" }, result.data.endDate)
+        assertEquals(contactRole?.takeIf { it != "null" }, result.data.roleCode)
+        assertEquals(authorizedSignature?.takeIf { it != "null" }?.toBoolean(), result.data.authorizedSignature)
+        assertEquals(salesforceAccountId?.takeIf { it != "null" }, result.data.relatedAccountId)
+        assertEquals(mainContact?.takeIf { it != "null" }?.toBoolean(), result.data.isMainContact)
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        // startDate, endDate, contactRole, roleClsCompanyCode, companyCode, sfRelatedAccount, mainContact
+        "2024-01-01, 2024-12-31, PARTNER, COMPANY_123, CODE_123, SF_ACC_123, true",
+        "2024-01-01, null, MANAGER, COMPANY_456, CODE_456, SF_ACC_456, false",
+        "null, 2024-12-31, ADMIN, null, null, SF_ACC_789, true",
+        "null, null, USER, COMPANY_999, CODE_999, null, null"
+    )
+    fun `toCrmContactRoleRequest should map fields correctly`(
+        startDate: String?,
+        endDate: String?,
+        contactRole: String?,
+        roleClsCompanyCode: String?,
+        companyCode: String?,
+        sfRelatedAccount: String?,
+        mainContact: Boolean?
+    ) {
+        // Given
+        val crmRoleData = createCrmRoleData(
+            startDate = if (startDate == "null") null else LocalDate.parse(startDate),
+            endDate = if (endDate == "null") null else LocalDate.parse(endDate),
+            contactRole = if (contactRole == "null") null else contactRole,
+            roleClsCompanyCode = if (roleClsCompanyCode == "null") null else roleClsCompanyCode,
+            companyCode = if (companyCode == "null") null else companyCode,
+            sfRelatedAccount = if (sfRelatedAccount == "null") null else sfRelatedAccount,
+            mainContact = mainContact?.takeIf { it != "null" }?.toBoolean()
+        )
+
+        // When
+        val result = crmRoleData.toCrmContactRoleRequest()
+
+        // Then
+        assertEquals("BATCH_REF", result.correlationId)
+        assertNotNull(result.data.roles)
+        assertEquals(1, result.data.roles!!.size)
+        
+        val crmRole = result.data.roles!!.first()
+        assertEquals(startDate?.takeIf { it != "null" }, crmRole.startDate)
+        assertEquals(endDate?.takeIf { it != "null" }, crmRole.endDate)
+        assertEquals(contactRole?.takeIf { it != "null" }, crmRole.roleCode)
+        assertEquals(roleClsCompanyCode?.takeIf { it != "null" }, crmRole.accountExternalCode)
+        assertEquals(companyCode?.takeIf { it != "null" }, crmRole.relatedAccountExternalId)
+        assertEquals(sfRelatedAccount?.takeIf { it != "null" }, crmRole.relatedAccountId)
+        assertEquals(mainContact?.takeIf { it != "null" }?.toBoolean(), crmRole.isMainContact)
+    }
+
+    // Méthode utilitaire
+    private fun createCrmRoleData(
+        startDate: LocalDate? = LocalDate.of(2024, 1, 1),
+        endDate: LocalDate? = LocalDate.of(2024, 12, 31),
+        contactRole: String? = "PARTNER",
+        kycType: String? = "KYC_LEVEL_1",
+        authorizedSignature: Boolean? = true,
+        salesforceAccountId: String? = "ACC_123",
+        mainContact: Boolean? = true,
+        roleClsCompanyCode: String? = "COMPANY_123",
+        companyCode: String? = "CODE_123",
+        sfRelatedAccount: String? = "SF_ACC_123"
+    ): CrmRoleData {
+        val crmData = CrmData(
+            startDate = startDate,
+            endDate = endDate,
+            contactRole = contactRole,
+            kycType = kycType,
+            authorizedSignature = authorizedSignature,
+            salesforceAccountId = salesforceAccountId,
+            mainContact = mainContact,
+            roleClsCompanyCode = roleClsCompanyCode,
+            companyCode = companyCode,
+            sfRelatedAccount = sfRelatedAccount
+        )
+        
+        val reconciliationId = ReconciliationId(
+            batchReference = ReferenceId("BATCH_REF"),
+            rowReference = ReferenceId("ROW_REF")
+        )
+
+        return CrmRoleData(
+            crmCustomerData = crmData,
+            reconciliationId = reconciliationId,
+            batchId = "BATCH_123",
+            rowNumber = 1
+        )
+    }
+}
