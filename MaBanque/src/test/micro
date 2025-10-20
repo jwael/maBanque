@@ -1,0 +1,336 @@
+import io.micrometer.core.instrument.Counter
+import io.micrometer.core.instrument.DistributionSummary
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Timer
+import io.micrometer.core.instrument.Tag
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.Duration
+import java.util.concurrent.TimeUnit
+import kotlin.test.assertEquals
+
+class MicroMeterAdapterTest {
+
+    private val meterRegistry = mockk<MeterRegistry>()
+    private lateinit var adapter: MicroMeterAdapter
+
+    @BeforeEach
+    fun setUp() {
+        clearAllMocks()
+        adapter = MicroMeterAdapter(meterRegistry)
+    }
+
+    // ==================== TESTS PARAMÉTRÉS POUR incrementCounter ====================
+
+    @ParameterizedTest
+    @CsvSource(
+        // name, tagKey, tagValue, expectedCounterName
+        "contacts.created, type, personal, contacts.created.counter",
+        "contacts.updated, status, active, contacts.updated.counter",
+        "roles.assigned, role_type, partner, roles.assigned.counter",
+        "batch.processed, batch_size, large, batch.processed.counter"
+    )
+    fun `incrementCounter should register counter with correct name and tags`(
+        name: String,
+        tagKey: String,
+        tagValue: String,
+        expectedCounterName: String
+    ) {
+        // Given
+        val tags = mapOf(tagKey to tagValue)
+        val counter = mockk<Counter>()
+        
+        every { 
+            Counter.builder(expectedCounterName)
+                .tags(listOf(Tag.of(tagKey, tagValue)))
+                .register(meterRegistry)
+                .increment()
+        } returns Unit
+
+        // When
+        adapter.incrementCounter(name, tags)
+
+        // Then
+        verify { 
+            Counter.builder(expectedCounterName)
+                .tags(listOf(Tag.of(tagKey, tagValue)))
+                .register(meterRegistry)
+                .increment()
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        // name, tag1Key, tag1Value, tag2Key, tag2Value
+        "contacts.processed, status, success, source, crm",
+        "roles.updated, role, admin, environment, production",
+        "batch.imported, type, customer, result, completed"
+    )
+    fun `incrementCounter should handle multiple tags correctly`(
+        name: String,
+        tag1Key: String,
+        tag1Value: String,
+        tag2Key: String,
+        tag2Value: String
+    ) {
+        // Given
+        val tags = mapOf(
+            tag1Key to tag1Value,
+            tag2Key to tag2Value
+        )
+        val counter = mockk<Counter>()
+        
+        every { 
+            Counter.builder("$name.counter")
+                .tags(match { it.size == 2 })
+                .register(meterRegistry)
+                .increment()
+        } returns Unit
+
+        // When
+        adapter.incrementCounter(name, tags)
+
+        // Then
+        verify { 
+            Counter.builder("$name.counter")
+                .tags(listOf(Tag.of(tag1Key, tag1Value), Tag.of(tag2Key, tag2Value)))
+                .register(meterRegistry)
+                .increment()
+        }
+    }
+
+    // ==================== TESTS PARAMÉTRÉS POUR recordTime ====================
+
+    @ParameterizedTest
+    @CsvSource(
+        // name, durationSeconds, tagKey, tagValue, expectedTimerName
+        "contacts.creation.time, 5, status, success, contacts.creation.time.timer",
+        "roles.assignment.time, 2, type, automatic, roles.assignment.time.timer",
+        "batch.processing.time, 30, size, medium, batch.processing.time.timer",
+        "api.call.time, 1, endpoint, createContact, api.call.time.timer"
+    )
+    fun `recordTime should record duration with correct timer name and tags`(
+        name: String,
+        durationSeconds: Long,
+        tagKey: String,
+        tagValue: String,
+        expectedTimerName: String
+    ) {
+        // Given
+        val duration = Duration.ofSeconds(durationSeconds)
+        val tags = mapOf(tagKey to tagValue)
+        val timer = mockk<Timer>()
+        
+        every { 
+            Timer.builder(expectedTimerName)
+                .tags(listOf(Tag.of(tagKey, tagValue)))
+                .register(meterRegistry)
+                .record(durationSeconds, TimeUnit.SECONDS)
+        } returns Unit
+
+        // When
+        adapter.recordTime(name, duration, tags)
+
+        // Then
+        verify { 
+            Timer.builder(expectedTimerName)
+                .tags(listOf(Tag.of(tagKey, tagValue)))
+                .register(meterRegistry)
+                .record(durationSeconds, TimeUnit.SECONDS)
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        // name, durationSeconds
+        "operation.time, 0",
+        "quick.task, 1", 
+        "long.process, 60",
+        "background.job, 3600"
+    )
+    fun `recordTime should handle different durations correctly`(
+        name: String,
+        durationSeconds: Long
+    ) {
+        // Given
+        val duration = Duration.ofSeconds(durationSeconds)
+        val tags = emptyMap<String, String>()
+        val timer = mockk<Timer>()
+        
+        every { 
+            Timer.builder("$name.timer")
+                .tags(emptyList())
+                .register(meterRegistry)
+                .record(durationSeconds, TimeUnit.SECONDS)
+        } returns Unit
+
+        // When
+        adapter.recordTime(name, duration, tags)
+
+        // Then
+        verify { 
+            Timer.builder("$name.timer")
+                .tags(emptyList())
+                .register(meterRegistry)
+                .record(durationSeconds, TimeUnit.SECONDS)
+        }
+    }
+
+    // ==================== TESTS PARAMÉTRÉS POUR recordSummary ====================
+
+    @ParameterizedTest
+    @CsvSource(
+        // name, value, tagKey, tagValue, expectedSummaryName
+        "contacts.batch.size, 100.0, type, import, contacts.batch.size.summary",
+        "roles.count, 5.0, environment, test, roles.count.summary",
+        "processing.time.avg, 2.5, metric, average, processing.time.avg.summary",
+        "memory.usage, 75.5, component, database, memory.usage.summary"
+    )
+    fun `recordSummary should record value with correct summary name and tags`(
+        name: String,
+        value: Double,
+        tagKey: String,
+        tagValue: String,
+        expectedSummaryName: String
+    ) {
+        // Given
+        val tags = mapOf(tagKey to tagValue)
+        val distributionSummary = mockk<DistributionSummary>()
+        
+        every { 
+            DistributionSummary.builder(expectedSummaryName)
+                .tags(listOf(Tag.of(tagKey, tagValue)))
+                .register(meterRegistry)
+                .record(value)
+        } returns Unit
+
+        // When
+        adapter.recordSummary(name, value, tags)
+
+        // Then
+        verify { 
+            DistributionSummary.builder(expectedSummaryName)
+                .tags(listOf(Tag.of(tagKey, tagValue)))
+                .register(meterRegistry)
+                .record(value)
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        // name, value
+        "zero.value, 0.0",
+        "small.value, 0.5",
+        "integer.value, 10.0",
+        "large.value, 999999.99",
+        "negative.value, -5.0"
+    )
+    fun `recordSummary should handle different values correctly`(
+        name: String,
+        value: Double
+    ) {
+        // Given
+        val tags = emptyMap<String, String>()
+        val distributionSummary = mockk<DistributionSummary>()
+        
+        every { 
+            DistributionSummary.builder("$name.summary")
+                .tags(emptyList())
+                .register(meterRegistry)
+                .record(value)
+        } returns Unit
+
+        // When
+        adapter.recordSummary(name, value, tags)
+
+        // Then
+        verify { 
+            DistributionSummary.builder("$name.summary")
+                .tags(emptyList())
+                .register(meterRegistry)
+                .record(value)
+        }
+    }
+
+    // ==================== TESTS AVEC TAGS VIDES ====================
+
+    @Test
+    fun `incrementCounter with empty tags should work correctly`() {
+        // Given
+        val name = "test.counter"
+        val emptyTags = emptyMap<String, String>()
+        
+        every { 
+            Counter.builder("$name.counter")
+                .tags(emptyList())
+                .register(meterRegistry)
+                .increment()
+        } returns Unit
+
+        // When
+        adapter.incrementCounter(name, emptyTags)
+
+        // Then
+        verify { 
+            Counter.builder("$name.counter")
+                .tags(emptyList())
+                .register(meterRegistry)
+                .increment()
+        }
+    }
+
+    @Test
+    fun `recordTime with empty tags should work correctly`() {
+        // Given
+        val name = "test.timer"
+        val duration = Duration.ofSeconds(5)
+        val emptyTags = emptyMap<String, String>()
+        
+        every { 
+            Timer.builder("$name.timer")
+                .tags(emptyList())
+                .register(meterRegistry)
+                .record(5, TimeUnit.SECONDS)
+        } returns Unit
+
+        // When
+        adapter.recordTime(name, duration, emptyTags)
+
+        // Then
+        verify { 
+            Timer.builder("$name.timer")
+                .tags(emptyList())
+                .register(meterRegistry)
+                .record(5, TimeUnit.SECONDS)
+        }
+    }
+
+    @Test
+    fun `recordSummary with empty tags should work correctly`() {
+        // Given
+        val name = "test.summary"
+        val value = 42.0
+        val emptyTags = emptyMap<String, String>()
+        
+        every { 
+            DistributionSummary.builder("$name.summary")
+                .tags(emptyList())
+                .register(meterRegistry)
+                .record(value)
+        } returns Unit
+
+        // When
+        adapter.recordSummary(name, value, emptyTags)
+
+        // Then
+        verify { 
+            DistributionSummary.builder("$name.summary")
+                .tags(emptyList())
+                .register(meterRegistry)
+                .record(value)
+        }
+    }
+}
