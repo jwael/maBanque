@@ -1,0 +1,30 @@
+@Test
+fun `updateCrmCustomer with successful response should return correct payload`() {
+    // Given
+    val customerData = createCrmClsCustomerData(salesforceAccountId = "EXISTING_ACC")
+    
+    val customerResponse = CrmCustomerResponse(
+        accountId = "BATCH_ID",  // ← Le nom exact du champ
+        status = "SUCCESS",
+        message = "success",
+        roles = listOf(           // ← La liste de roles
+            RoleResponse(         // ← Ou peut-être une classe Role différente ?
+                roleId = "ROLE_123",
+                status = "SUCCESS",
+                message = "Role created"
+            )
+        )
+    )
+    
+    every { 
+        crmClient.updateCustomer(any(), "EXISTING_ACC", any()).execute() 
+    } returns Response.success(customerResponse)
+
+    // When
+    val result = adapter.updateCrmCustomer(customerData)
+
+    // Then
+    assertEquals("BATCH_ID", result.crmAccountId)  // Ou peut-être "EXISTING_ACC" ?
+    assertEquals(RecordStepStatus.OK, result.crmStatus)
+    assertEquals("success", result.crmMessage)
+}
