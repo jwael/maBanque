@@ -1,0 +1,69 @@
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.assertj.core.api.Assertions.assertThat
+import java.time.LocalDate
+
+class CrmCustomerRequestTest {
+
+    object CrmCustomerRequestHelper {
+        fun createRoles(crmData: CrmData, isCrmUpdate: Boolean): List<CrmRole>? {
+            return when {
+                isCrmUpdate -> null
+                crmData.mainCountry.equals("UNITED KINGDOM", ignoreCase = true) -> listOf(
+                    CrmRole(
+                        startDate = crmData.startDate?.format(CrmCustomerRequest.dateFormatter),
+                        roleCode = "Driver",
+                        kycType = crmData.kycType,
+                        authorizedSignature = crmData.authorizedSignature,
+                        isMainContact = false
+                    ),
+                    CrmRole(
+                        startDate = crmData.startDate?.format(CrmCustomerRequest.dateFormatter),
+                        roleCode = "Other Business Role",
+                        kycType = crmData.kycType,
+                        authorizedSignature = crmData.authorizedSignature,
+                        isMainContact = true
+                    )
+                )
+                crmData.contactRole.isNullOrBlank() -> null
+                else -> listOf(
+                    CrmRole(
+                        startDate = crmData.startDate?.format(CrmCustomerRequest.dateFormatter),
+                        roleCode = crmData.contactRole,
+                        kycType = crmData.kycType,
+                        authorizedSignature = crmData.authorizedSignature,
+                        isMainContact = crmData.mainContact
+                    )
+                )
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "false,UNITED KINGDOM,Driver,2",
+        "false,FRANCE,DIRECTOR,1",
+        "true,FRANCE,DIRECTOR,0",
+        "false,FRANCE,,0"
+    )
+    fun `should create roles correctly`(
+        isCrmUpdate: Boolean,
+        mainCountry: String?,
+        contactRole: String?,
+        expectedSize: Int
+    ) {
+        val crmData = CrmData(
+            mainCountry = mainCountry,
+            contactRole = contactRole,
+            startDate = LocalDate.of(2024, 10, 16),
+            kycType = "SomeType",
+            authorizedSignature = true,
+            mainContact = true
+        )
+
+        val result = CrmCustomerRequestHelper.createRoles(crmData, isCrmUpdate)
+
+        if (expectedSize == 0) assertThat(result).isNull()
+        else assertThat(result).isNotNull.hasSize(expectedSize)
+    }
+}
