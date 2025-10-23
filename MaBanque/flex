@@ -1,0 +1,40 @@
+@ParameterizedTest
+@CsvSource(
+    "FR, ABC1234567-XYZ9876543, SUCCESS, , ",
+    "DE, DEF9876543-UVW1234567, ERROR, Message erreur, SALES"
+)
+fun `should invoke use case with correct payload`(
+    country: String,
+    reconciliationId: String,
+    status: String,
+    errorMessage: String?,
+    scope: String?
+) {
+    // GIVEN
+    val message = ClsFeedbackContactKafkaMessage(
+        scope = scope,
+        status = status,
+        errorMessage = errorMessage
+    )
+
+    // WHEN
+    listener.acceptClsContactFeedback(
+        countryHeader = country,
+        reconciliationIdHeader = reconciliationId,
+        clsFeedbackContactKafkaMessage = message
+    )
+
+    // THEN
+    verify(exactly = 1) {
+        handleClsContactFeedbackUseCaseApi.invoke(
+            match { payload ->
+                // 🔎 Vérifie seulement ce qui est sûr
+                payload.countryCode.value == country &&
+                payload.reconciliationId.print() == ReconciliationId.parse(reconciliationId).print() &&
+                payload.status == status &&
+                (payload.errorMessage ?: "") == (errorMessage ?: "") &&
+                (payload.scope ?: "") == (scope ?: "")
+            }
+        )
+    }
+}
