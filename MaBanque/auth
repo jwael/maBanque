@@ -1,0 +1,40 @@
+import org.springframework.security.authentication.BadCredentialsException
+import org.springframework.security.core.AuthenticationException
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.mock.web.MockHttpServletResponse
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.api.Assertions.*
+
+class RestSecurityConfigurationPureTestHandlers {
+
+    private val blmAccessDeniedHandler = BlmAccessDeniedHandler()
+    private val blmAuthEntryPoint = BlmAuthEntryPoint()
+
+    @ParameterizedTest
+    @CsvSource(
+        "/unauthorized, 401, 'ERROR 401 UNAUTHORIZED: Authentication failed. Please check your credentials.'",
+        "/forbidden, 403, 'ERROR 403 FORBIDDEN: Access denied. You don''t have permission to perform this action.'"
+    )
+    fun `should use correct error handlers`(path: String, expectedStatus: Int, expectedMessage: String) {
+        // GIVEN
+        val request = MockHttpServletRequest("GET", path)
+        val response = MockHttpServletResponse()
+
+        // WHEN
+        if (expectedStatus == 401) {
+            // ✅ Utiliser une vraie AuthenticationException
+            val authEx: AuthenticationException = BadCredentialsException("auth fail")
+            blmAuthEntryPoint.commence(request, response, authEx)
+        } else {
+            blmAccessDeniedHandler.handle(request, response, null)
+        }
+
+        // THEN
+        assertEquals(expectedStatus, response.status)
+        assertTrue(
+            response.contentAsString.contains(expectedMessage),
+            "Expected message to contain '$expectedMessage' but got '${response.contentAsString}'"
+        )
+    }
+}
