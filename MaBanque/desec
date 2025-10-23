@@ -1,0 +1,25 @@
+@DisplayName("RestSecurityConfiguration - securityFilterChain()")
+class RestSecurityConfigurationTest {
+
+    private val blmAccessDeniedHandler = BLmAccessDeniedHandler()
+    private val blmAuthEntryPoint = BlmAuthEntryPoint()
+    private val configuration = RestSecurityConfiguration(
+        corsAllowedOrigins = arrayOf("http://localhost"),
+        caixaImportClientId = "CAIXA_IMPORT",
+        caixaImportClientSecret = "secret",
+        bLmAccessDeniedHandler = blmAccessDeniedHandler,
+        bLmAuthEntryPoint = blmAuthEntryPoint
+    )
+
+    @Test
+    fun `should build security filter chain without exceptions`() {
+        // WHEN
+        val filterChain = configuration.securityFilterChain(mockk(relaxed = true))
+
+        // THEN
+        assertNotNull(filterChain)
+        // Vérifie que les handlers sont bien ceux qu'on a passés
+        assertEquals(blmAccessDeniedHandler, filterChain.sharedObjects[AccessDeniedHandler::class.java])
+        assertEquals(blmAuthEntryPoint, filterChain.sharedObjects[AuthenticationEntryPoint::class.java])
+    }
+}
