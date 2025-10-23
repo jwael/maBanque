@@ -1,0 +1,42 @@
+import com.arval.blm.infrastructure.driving.kafka.contact.*
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+
+class ClsKafkaListenerTest {
+
+    private val handLeClsContactRequestUseCaseApi = mockk<HandLeClsContactRequestUseCaseApi>(relaxed = true)
+    private val listener = ClsKafkaListener(handLeClsContactRequestUseCaseApi)
+
+    @Test
+    fun `should invoke use case with correct payload`() {
+        // GIVEN
+        val countryHeader = "FR"
+        val reconciliationIdHeader = "ABC1234567-XYZ9876543" // 10+10 characters
+        val message = CLsRequestContactKafkaMessage(
+            cLID = "CLS001",
+            contactRoleSalesforceID = "ROLE123"
+        )
+
+        val expectedPayload = ClsContactDataRequestPayLoad(
+            countryCode = CountryCode(countryHeader),
+            reconciliationId = ReconciliationId.parse(reconciliationIdHeader),
+            clsId = "CLS001",
+            contactRoleSalesForceId = "ROLE123"
+        )
+
+        // WHEN
+        listener.acceptClsContactRequest(
+            countryHeader = countryHeader,
+            reconciliationIdHeader = reconciliationIdHeader,
+            clsRequestContactKafkaMessage = message
+        )
+
+        // THEN
+        verify(exactly = 1) {
+            handLeClsContactRequestUseCaseApi.invoke(expectedPayload)
+        }
+    }
+}
