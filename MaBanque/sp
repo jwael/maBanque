@@ -1,0 +1,33 @@
+@SpringBootTest
+@AutoConfigureMockMvc
+class RestSecurityConfigurationIntegrationTest {
+
+    @Autowired
+    lateinit var mockMvc: MockMvc
+
+    @Test
+    fun `unauthenticated request to caixa import should return 401`() {
+        mockMvc.perform(get("/api/v1/customers/caixa/import"))
+            .andExpect(status().isUnauthorized)
+            .andExpect(content().string(containsString("ERROR 401 UNAUTHORIZED")))
+    }
+
+    @Test
+    fun `authenticated request with wrong role should return 403`() {
+        mockMvc.perform(
+            get("/api/v1/customers/caixa/import")
+                .with(user("user").roles("USER")) // pas CAIXA_IMPORT
+        )
+            .andExpect(status().isForbidden)
+            .andExpect(content().string(containsString("ERROR 403 FORBIDDEN")))
+    }
+
+    @Test
+    fun `authenticated request with correct role should succeed`() {
+        mockMvc.perform(
+            get("/api/v1/customers/caixa/import")
+                .with(user("importer").roles("CAIXA_IMPORT"))
+        )
+            .andExpect(status().isOk)
+    }
+}
