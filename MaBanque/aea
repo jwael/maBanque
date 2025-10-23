@@ -1,0 +1,30 @@
+@ParameterizedTest
+@CsvSource(
+    "FR, ABC1234567-XYZ9876543, CLS001, ROLE123",
+    "DE, DEF9876543-UVW1234567, CLS002, ROLE456"
+)
+fun `should map request payload correctly`(
+    country: String,
+    reconciliationId: String,
+    clsId: String,
+    contactRole: String
+) {
+    // GIVEN
+    val message = CLsRequestContactKafkaMessage(
+        clsID = clsId,
+        contactRoleSalesforceID = contactRole
+    )
+
+    // WHEN
+    val result = listener.mapToClsContactDataRequestPayload(
+        countryCode = country,
+        reconciliationId = reconciliationId,
+        message = message
+    )
+
+    // THEN
+    assertEquals(clsId, result.clsId)
+    assertEquals(contactRole, result.contactRoleSalesForceId)
+    assertEquals(country, result.countryCode.value)
+    assertEquals(ReconciliationId.parse(reconciliationId), result.reconciliationId)
+}
