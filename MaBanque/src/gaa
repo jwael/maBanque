@@ -1,0 +1,61 @@
+@Test
+fun `should export events to CSV correctly`() {
+    // GIVEN
+    val batchReference = "BATCH123"
+
+    val mockEvents = listOf(
+        RecordStepEvent(
+            rowNumber = 1,
+            reconciliationId = ReferenceId("R1"),
+            stepName = RecordStepName(order = 1, displayName = "IMPORT_CONTACT"),
+            stepMessage = "Contact imported successfully",
+            timestamp = Instant.parse("2024-05-20T12:00:00Z"),
+            stepStatus = RecordStepStatus.OK
+        ),
+        RecordStepEvent(
+            rowNumber = 2,
+            reconciliationId = ReferenceId("R2"),
+            stepName = RecordStepName(order = 2, displayName = "VALIDATION"),
+            stepMessage = "Missing email field",
+            timestamp = Instant.parse("2024-05-20T12:10:00Z"),
+            stepStatus = RecordStepStatus.KO
+        )
+    )
+
+    every {
+        exportEventsUseCaseApi.execute(
+            batchReference = ReferenceId(batchReference),
+            exportEventsCriteria = any()
+        )
+    } returns mockEvents.stream()
+
+    // WHEN
+    val response: ResponseEntity<InputStreamResource> = batchController.downloadEvents(batchReference)
+
+    // THEN
+    assertEquals(200, response.statusCode.value())
+    assertTrue(
+        response.headers["Content-Disposition"]!!.first()
+            .contains("batch-$batchReference-events-details.csv")
+    )
+
+    val csvContent = BufferedReader(InputStreamReader(response.body!!.inputStream)).readText()
+
+    // ✅ Vérifie que le header contient bien les colonnes attendues
+    val header = csvContent.lines().first()
+    assertTrue(header.contains("Line"))
+    assertTrue(header.contains("Reconciliation ID"))
+    assertTrue(header.contains("Status"))
+
+    // ✅ Vérifie que 2 lignes d'événements ont été exportées
+    val dataLines = csvContent.lines().filter { it.isNotBlank() }.drop(1)
+    assertEquals(2, dataLines.size)
+
+    // ✅ Vérifie les contenus logiques
+    assertTrue(dataLines.any { it.contains("IMPORT_CONTACT") && it.contains("OK") })
+    assertTrue(dataLines.any { it.contains("VALIDATION") && it.contains("KO") })
+
+    // ✅ Vérifie le format de date (dd-MM-yyyy, HH:mm)
+    val datePattern = Regex("\\d{2}-\\d{2}-\\d{4}, \\d{2}:\\d{2}")
+    assertTrue(dataLines.all { line -> datePattern.containsMatchIn(line) })
+}
