@@ -1,0 +1,23 @@
+@Nested
+@DisplayName("AuthorizeHttpRequestsDsl - authorizeAll()")
+inner class AuthorizeAllTests {
+
+    private val dsl = mockk<AuthorizeHttpRequestsDsl>(relaxed = true)
+    private val authManager = mockk<AuthorizationManager<RequestAuthorizationContext>>()
+
+    @ParameterizedTest
+    @CsvSource(
+        "'/swagger-ui/**', '/api/springdoc/**'",
+        "'/api/actuator/**', '/api/v1/debug/**'"
+    )
+    fun `should call authorize for all patterns`(pattern1: String, pattern2: String) {
+        // WHEN
+        dsl.authorizeAll(authManager, pattern1, pattern2)
+
+        // THEN
+        verify { 
+            dsl.authorize(pattern = pattern1, access = authManager)
+            dsl.authorize(pattern = pattern2, access = authManager)
+        }
+    }
+}
