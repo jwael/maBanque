@@ -1,0 +1,44 @@
+@Nested
+    @DisplayName("CSV Export Scenarios")
+    inner class CsvExportTests {
+
+        @ParameterizedTest(name = "batchReference={0}")
+        @CsvSource(
+            "BATCH001",
+            "BATCH002",
+            "BATCH003"
+        )
+        fun `should export failed caixa customers as CSV`(batchReference: String) {
+
+            // GIVEN
+            val customer = CrmClsCustomerData(
+                id = "1",
+                batchId = batchReference,
+                reconciliationId = ReconciliationId(
+                    batchReference = ReferenceId("ABCDEFGHIJ"),
+                    rowReference = ReferenceId("1234567890")
+                ),
+                rowNumber = 1,
+                rowReference = ReferenceId("1234567890"),
+                combata = CrmData(),
+                clsdata = emptyMap(),
+                crmInsertedId = null
+            )
+
+            every { exportBatchFailedCustomersUseCaseApi.execute(ReferenceId(batchReference)) } returns Stream.of(customer)
+            every { getFailedEventMessageUseCaseApi.execute(any()) } returns "Error message"
+
+            // WHEN
+            val response: ResponseEntity<InputStreamResource> =
+                batchController.downloadFailedCaixaCustomerRecords(batchReference, emptyList())
+
+            // THEN
+            assertEquals(
+                "attachment; filename=\"batch-$batchReference-failed-caixa-records.csv\"",
+                response.headers["Content-Disposition"]?.first()
+            )
+            assertEquals("text/csv; charset=UTF-8", response.headers.contentType.toString())
+            assertTrue(response.body is InputStreamResource)
+        }
+    }
+}
