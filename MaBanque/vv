@@ -1,0 +1,43 @@
+@DisplayName("RestSecurityConfiguration - securityFilterChain()")
+class RestSecurityConfigurationTest {
+
+    private val blmAccessDeniedHandler = BlmAccessDeniedHandler()
+    private val blmAuthEntryPoint = BlmAuthEntryPoint()
+
+    private val configuration = RestSecurityConfiguration(
+        corsAllowedOrigins = arrayOf("http://localhost"),
+        caixaImportClientId = "CAIXA_IMPORT",
+        caixaImportClientSecret = "secret",
+        bLmAccessDeniedHandler = blmAccessDeniedHandler,
+        bLmAuthEntryPoint = blmAuthEntryPoint
+    )
+
+    @Nested
+    @DisplayName("securityFilterChain scenarios")
+    inner class SecurityFilterChainCases {
+
+        @ParameterizedTest(name = "Scenario #{index} - {0}")
+        @CsvSource(
+            // ScenarioName, RequestPath, ExpectedStatus
+            "Swagger docs, /swagger-ui/index.html, 200",
+            "Actuator endpoint, /api/actuator/health, 200",
+            "CAIXA import unauthorized, /api/v1/customers/caixa/import, 401",
+            "Other request, /api/v1/any-other, 401"
+        )
+        fun `should apply security rules correctly`(
+            scenarioName: String,
+            requestPath: String,
+            expectedStatus: Int
+        ) {
+            val http = MockHttpServletRequestBuilder(requestPath)
+            val response = MockHttpServletResponse()
+
+            val chain = configuration.securityFilterChain(MockHttpSecurity())
+
+            // On applique le vrai filter chain à la request
+            chain.doFilter(http, response)
+
+            assertEquals(expectedStatus, response.status)
+        }
+    }
+}
