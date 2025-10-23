@@ -1,0 +1,60 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import io.mockk.mockk
+import kotlin.test.assertEquals
+
+class BatchControllerMonitoringTest {
+
+    private val blmAccessAuthorization = mockk<BlmImportAuthorizationProperties>(relaxed = true)
+
+    private val batchController = BatchController(
+        listBatchesUseCaseApi = mockk(relaxed = true),
+        batchImportOverviewUseCase = mockk(relaxed = true),
+        getBatchSummaryUseCaseApi = mockk(relaxed = true),
+        getBatchEventsUseCaseApi = mockk(relaxed = true),
+        exportEventsUseCaseApi = mockk(relaxed = true),
+        exportBatchFailedCustomersUseCaseApi = mockk(relaxed = true),
+        getFailedEventMessageUseCaseApi = mockk(relaxed = true),
+        blmAccessAuthorization = blmAccessAuthorization
+    )
+
+    @Test
+    fun `should allow access when feature is disabled`() {
+        every { blmAccessAuthorization.enabled } returns false
+
+        // Aucun rôle nécessaire, ne doit pas lever d'exception
+        batchController.invokePrivate("checkMonitoringAccess", LoaderBatchTrigger.CAIXA.name, emptyList<String>())
+        batchController.invokePrivate("checkMonitoringAccess", LoaderBatchTrigger.E_PARTNER.name, emptyList<String>())
+    }
+
+    @Test
+    fun `should allow access when user has correct role`() {
+        every { blmAccessAuthorization.enabled } returns true
+        val rolesCaixa = listOf(UserRoles.CAIXA_MONITORING.name)
+        val rolesEpartner = listOf(UserRoles.E_PARTNER_MONITORING.name)
+
+        batchController.invokePrivate("checkMonitoringAccess", LoaderBatchTrigger.CAIXA.name, rolesCaixa)
+        batchController.invokePrivate("checkMonitoringAccess", LoaderBatchTrigger.E_PARTNER.name, rolesEpartner)
+    }
+
+    @Test
+    fun `should throw ForbiddenException when user lacks role`() {
+        every { blmAccessAuthorization.enabled } returns true
+
+        val exCaixa = assertThrows<ForbiddenException> {
+            batchController.invokePrivate("checkMonitoringAccess", LoaderBatchTrigger.CAIXA.name, emptyList<String>())
+        }
+        assertEquals(
+            "You currently don't have permission to Caixa monitoring. To proceed? your manager must enable CAIXA-MONITORING access for your account.",
+            exCaixa.message
+        )
+
+        val exEpartner = assertThrows<ForbiddenException> {
+            batchController.invokePrivate("checkMonitoringAccess", LoaderBatchTrigger.E_PARTNER.name, emptyList<String>())
+        }
+        assertEquals(
+            "You currently don't have permission to E_Partner monitoring. To proceed, your manager must enable EPARTNER MONITORING access for your account.",
+            exEpartner.message
+        )
+    }
+}
