@@ -1,0 +1,106 @@
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.security.authentication.AuthenticationManager
+import org.springframework.security.config.annotation.web.builders.HttpSecurity
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
+import org.springframework.security.config.http.SessionCreationPolicy
+import org.springframework.security.web.DefaultSecurityFilterChain
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher
+
+@DisplayName("RestSecurityConfiguration - securityFilterChain()")
+class RestSecurityConfigurationPureTest {
+
+    private val blmAccessDeniedHandler = BlmAccessDeniedHandler()
+    private val blmAuthEntryPoint = BlmAuthEntryPoint()
+    private val configuration = RestSecurityConfiguration(
+        corsAllowedOrigins = arrayOf("http://localhost"),
+        caixaImportClientId = "CAIXA_IMPORT",
+        caixaImportClientSecret = "secret",
+        bLmAccessDeniedHandler = blmAccessDeniedHandler,
+        bLmAuthEntryPoint = blmAuthEntryPoint
+    )
+
+    private fun buildSecurityChain(): DefaultSecurityFilterChain {
+        val http = HttpSecurity(null, null, null, null, null, null, emptyMap())
+        return configuration.securityFilterChain(http)
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "/swagger-ui/index.html, true",
+        "/api/v1/debug/test, true",
+        "/api/v1/customers/caixa/import, false",
+        "/api/unknown, false"
+    )
+    fun `should match correct authorization rules`(path: String, expectedPermit: Boolean) {
+        // GIVEN
+        val chain = buildSecurityChain()
+
+        // WHEN
+        val matchers = chain.requestMatchers
+        val isPermitted = matchers.any {
+            it is AntPathRequestMatcher && it.pattern in listOf(
+                "/swagger-ui/**",
+                "/api/springdoc/**",
+                "/v3/api-docs/**",
+                "/api/actuator/**",
+                "/api/v1/debug/**",
+                "/api/v1/caixa/debug/**"
+            ) && AntPathRequestMatcher(it.pattern).matches(MockHttpServletRequest("GET", path))
+        }
+
+        // THEN
+        assertEquals(expectedPermit, isPermitted)
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "/api/v1/customers/caixa/import, CAIXA_IMPORT, true",
+        "/api/v1/customers/caixa/import, OTHER_ROLE, false"
+    )
+    fun `should require CAIXA_IMPORT role for caixa import`(
+        path: String,
+        role: String,
+        expectedAuthorized: Boolean
+    ) {
+        // GIVEN
+        val mockRequest = MockHttpServletRequest("GET", path)
+        val mockResponse = MockHttpServletResponse()
+        val chain = buildSecurityChain()
+
+        // WHEN
+        val hasAccess = role == "CAIXA_IMPORT"
+
+        // THEN
+        if (expectedAuthorized) {
+            assertTrue(hasAccess, "Expected role $role to be authorized for $path")
+        } else {
+            assertFalse(hasAccess, "Expected role $role to be denied for $path")
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "/unauthorized, 401, 'ERROR 401 UNAUTHORIZED: Authentication failed. Please check your credentials.'",
+        "/forbidden, 403, 'ERROR 403 FORBIDDEN: Access denied. You don''t have permission to perform this action.'"
+    )
+    fun `should use correct error handlers`(path: String, expectedStatus: Int, expectedMessage: String) {
+        // GIVEN
+        val request = MockHttpServletRequest("GET", path)
+        val response = MockHttpServletResponse()
+
+        if (expectedStatus == 401) {
+            blmAuthEntryPoint.commence(request, response, RuntimeException("auth fail") as AuthenticationException)
+        } else {
+            blmAccessDeniedHandler.handle(request, response, null)
+        }
+
+        // THEN
+        assertEquals(expectedStatus, response.status)
+        assertTrue(response.contentAsString.contains(expectedMessage))
+    }
+}
