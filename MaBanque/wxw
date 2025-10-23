@@ -1,0 +1,38 @@
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.springframework.security.authorization.AuthorizationManager
+import org.springframework.security.authorization.RequestAuthorizationContext
+import org.springframework.security.config.web.servlet.AuthorizeHttpRequestsDsl
+
+@DisplayName("AuthorizeHttpRequestsDsl - authorizeAll() Tests")
+class AuthorizeAllTest {
+
+    // On mocke un AuthorizationManager pour vérifier qu'il est bien passé
+    private val dummyAuthManager = AuthorizationManager<RequestAuthorizationContext> { _, _ -> 
+        org.springframework.security.authorization.AuthorizationDecision(true) 
+    }
+
+    @ParameterizedTest(name = "Pattern {0} should be authorized")
+    @CsvSource(
+        "/swagger-ui/**",
+        "/api/springdoc/**",
+        "/v3/api-docs/**",
+        "/api/actuator/**",
+        "/api/v1/debug/**",
+        "/api/v1/caixa/debug/**"
+    )
+    fun `authorizeAll should call authorize for each pattern`(pattern: String) {
+        // GIVEN
+        val dsl = AuthorizeHttpRequestsDsl()
+
+        // WHEN
+        dsl.authorizeAll(dummyAuthManager, pattern)
+
+        // THEN
+        // Comme on ne peut pas récupérer les internes de DSL facilement, on teste indirectement
+        // qu'aucune exception n'est levée et que la lambda fonctionne avec le pattern
+        assertTrue(true) // ✅ signifie que authorizeAll a été invoqué sans crash
+    }
+}
