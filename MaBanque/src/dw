@@ -1,0 +1,83 @@
+package com.arval.blm.infrastructure.driving.rest.controller
+
+import com.arval.blm.core.domain.model.common.ReferenceId
+import com.arval.blm.core.domain.model.event.RecordStepEvent
+import com.arval.blm.core.domain.model.event.StepName
+import com.arval.blm.core.domain.model.event.StepStatus
+import com.arval.blm.core.domain.usecase.event.ExportEventsCriteria
+import com.arval.blm.core.domain.usecase.event.ExportEventsUseCaseApi
+import com.arval.blm.infrastructure.driving.rest.controller.BatchController
+import com.arval.blm.infrastructure.driving.rest.dto.LoaderBatchDto
+import com.arval.blm.infrastructure.driving.rest.security.BlmImportAuthorizationProperties
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.jupiter.api.Test
+import org.springframework.core.io.InputStreamResource
+import org.springframework.http.ResponseEntity
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.time.Instant
+import java.util.stream.Stream
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+class BatchControllerTest {
+
+    private val listBatchesUseCaseApi = mockk<com.arval.blm.core.domain.usecase.batch.ListBatchesUseCaseApi>()
+    private val exportEventsUseCaseApi = mockk<ExportEventsUseCaseApi>()
+    private val controller = BatchController(
+        listBatchesUseCaseApi = listBatchesUseCaseApi,
+        batchImportOverviewUseCase = mockk(relaxed = true),
+        getBatchSummaryUseCaseApi = mockk(relaxed = true),
+        getBatchEventsUseCaseApi = mockk(relaxed = true),
+        exportEventsUseCaseApi = exportEventsUseCaseApi,
+        exportBatchFailedCustomersUseCaseApi = mockk(relaxed = true),
+        getFailedEventMessageUseCaseApi = mockk(relaxed = true),
+        blmAccessAuthorization = mockk<BlmImportAuthorizationProperties>(relaxed = true)
+    )
+
+    @Test
+    fun `should export events to CSV correctly`() {
+        // GIVEN
+        val batchReference = "BATCH123"
+        val mockEvents = listOf(
+            RecordStepEvent(
+                rowNumber = 1,
+                reconciliationId = ReferenceId("R1"),
+                stepName = StepName.IMPORT_CONTACT,
+                stepMessage = "Contact imported",
+                timestamp = Instant.parse("2024-05-20T12:00:00Z"),
+                stepStatus = StepStatus.OK
+            ),
+            RecordStepEvent(
+                rowNumber = 2,
+                reconciliationId = ReferenceId("R2"),
+                stepName = StepName.VALIDATION,
+                stepMessage = "Missing email",
+                timestamp = Instant.parse("2024-05-20T12:10:00Z"),
+                stepStatus = StepStatus.KO
+            )
+        )
+
+        every {
+            exportEventsUseCaseApi.execute(
+                batchReference = ReferenceId(batchReference),
+                exportEventsCriteria = any()
+            )
+        } returns mockEvents.stream()
+
+        // WHEN
+        val response: ResponseEntity<InputStreamResource> = controller.downloadEvents(batchReference)
+
+        // THEN
+        assertEquals(200, response.statusCode.value())
+        assertTrue(response.headers["Content-Disposition"]!!.first().contains("batch-$batchReference-events-details.csv"))
+
+        val csvContent = BufferedReader(InputStreamReader(response.body!!.inputStream)).readText()
+
+        // Vérif du contenu CSV
+        assertTrue(csvContent.contains("Line;Reconciliation ID;Step;Message;Date (UTC);Status"))
+        assertTrue(csvContent.contains("1;R1;IMPORT_CONTACT"))
+        assertTrue(csvContent.contains("2;R2;VALIDATION"))
+    }
+}
