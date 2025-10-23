@@ -1,0 +1,54 @@
+@Test
+fun `should export events to CSV correctly`() {
+    // GIVEN
+    val batchReference = "BATCH123"
+    val mockEvents = listOf(
+        RecordStepEvent(
+            rowNumber = 1,
+            reconciliationId = ReferenceId("R1"),
+            stepName = StepName.IMPORT_CONTACT,
+            stepMessage = "Contact imported",
+            timestamp = Instant.parse("2024-05-20T12:00:00Z"),
+            stepStatus = StepStatus.OK
+        ),
+        RecordStepEvent(
+            rowNumber = 2,
+            reconciliationId = ReferenceId("R2"),
+            stepName = StepName.VALIDATION,
+            stepMessage = "Missing email",
+            timestamp = Instant.parse("2024-05-20T12:10:00Z"),
+            stepStatus = StepStatus.KO
+        )
+    )
+
+    every {
+        exportEventsUseCaseApi.execute(
+            batchReference = ReferenceId(batchReference),
+            exportEventsCriteria = any()
+        )
+    } returns mockEvents.stream()
+
+    // WHEN
+    val response: ResponseEntity<InputStreamResource> = controller.downloadEvents(batchReference)
+
+    // THEN
+    assertEquals(200, response.statusCode.value())
+    assertTrue(response.headers["Content-Disposition"]!!.first().contains("batch-$batchReference-events-details.csv"))
+
+    val csvContent = BufferedReader(InputStreamReader(response.body!!.inputStream)).readText()
+
+    // ✅ Vérifie que l’en-tête existe
+    assertTrue(
+        csvContent.lines().first().contains("Line") &&
+        csvContent.lines().first().contains("Reconciliation ID"),
+        "Le header CSV doit contenir les colonnes attendues"
+    )
+
+    // ✅ Vérifie qu’il y a bien 2 lignes d’événements
+    val dataLines = csvContent.lines().filter { it.isNotBlank() }.drop(1)
+    assertEquals(2, dataLines.size, "Le CSV doit contenir 2 lignes d'événements")
+
+    // ✅ Vérifie le contenu sans dépendre du format exact
+    assertTrue(dataLines.any { it.contains("R1") && it.contains("IMPORT_CONTACT") })
+    assertTrue(dataLines.any { it.contains("R2") && it.contains("VALIDATION") })
+}
