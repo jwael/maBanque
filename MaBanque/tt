@@ -1,0 +1,49 @@
+import jakarta.servlet.http.HttpServletResponse
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.security.access.AccessDeniedException
+import org.springframework.security.authentication.BadCredentialsException
+import org.springframework.security.core.AuthenticationException
+import kotlin.test.assertEquals
+
+@DisplayName("Blm Security Error Handlers Test")
+class RestSecurityConfigurationTest {
+
+    private val blmAuthEntryPoint = BlmAuthEntryPoint()
+    private val blmAccessDeniedHandler = BlmAccessDeniedHandler()
+
+    @ParameterizedTest
+    @CsvSource(
+        "/unauthorized, 401, 'ERROR 401 UNAUTHORIZED: Authentication failed. Please check your credentials.'",
+        "/forbidden, 403, 'ERROR 403 FORBIDDEN: Access denied. You don''t have permission to perform this action.'"
+    )
+    fun `should use correct error handlers`(
+        path: String,
+        expectedStatus: Int,
+        expectedMessage: String
+    ) {
+        // GIVEN
+        val request = MockHttpServletRequest("GET", path)
+        val response = MockHttpServletResponse()
+
+        // WHEN
+        if (expectedStatus == HttpServletResponse.SC_UNAUTHORIZED) {
+            val authEx: AuthenticationException = BadCredentialsException("auth fail")
+            blmAuthEntryPoint.commence(request, response, authEx)
+        } else {
+            val accessDeniedEx = AccessDeniedException("Access denied")
+            blmAccessDeniedHandler.handle(request, response, accessDeniedEx)
+        }
+
+        // THEN
+        assertEquals(expectedStatus, response.status)
+        assertEquals(
+            expectedMessage.trim(),
+            response.contentAsString.trim(),
+            "Expected exact match but got '${response.contentAsString}'"
+        )
+    }
+}
