@@ -1,0 +1,70 @@
+package com.arval.blm.infrastructure.driven.apigee.batch.controller
+
+import com.arval.blm.core.domain.model.contact.CrmClsCustomerData
+import com.arval.blm.core.domain.model.contact.CrmData
+import com.arval.blm.core.domain.model.contact.ReferenceId
+import com.arval.blm.core.domain.model.contact.ReconciliationId
+import com.arval.blm.infrastructure.driven.apigee.crm.adapter.BatchController
+import com.arval.blm.infrastructure.driven.apigee.crm.adapter.ExportBatchFailedCustomersUseCaseApi
+import com.arval.blm.infrastructure.driven.apigee.crm.config.BlmImportAuthorizationProperties
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.jupiter.api.Test
+import org.springframework.core.io.InputStreamResource
+import org.springframework.http.ResponseEntity
+import java.util.stream.Stream
+import kotlin.test.assertTrue
+import kotlin.test.assertNotNull
+
+class BatchControllerDownloadFailedCaixaRecordsTest {
+
+    private val exportBatchFailedCustomersUseCaseApi = mockk<ExportBatchFailedCustomersUseCaseApi>()
+    private val blmAccessAuthorization = mockk<BlmImportAuthorizationProperties>(relaxed = true)
+
+    private val batchController = BatchController(
+        listBatchesUseCaseApi = mockk(relaxed = true),
+        batchImportOverviewUseCase = mockk(relaxed = true),
+        getBatchSummaryUseCaseApi = mockk(relaxed = true),
+        getBatchEventsUseCaseApi = mockk(relaxed = true),
+        exportEventsUseCaseApi = mockk(relaxed = true),
+        exportBatchFailedCustomersUseCaseApi = exportBatchFailedCustomersUseCaseApi,
+        getFailedEventMessageUseCaseApi = mockk { every { execute(any()) } returns "Some error message" },
+        blmAccessAuthorization = blmAccessAuthorization
+    )
+
+    @Test
+    fun `should return InputStreamResource CSV for failed caixa customers`() {
+        // GIVEN
+        val batchReference = "ABC123"
+        val customer = CrmClsCustomerData(
+            id = "1",
+            batchId = batchReference,
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId(batchReference),
+                rowReference = ReferenceId("ROW001")
+            ),
+            rowNumber = 1,
+            rowReference = ReferenceId("ROW001"),
+            combata = CrmData(
+                forename = "John",
+                surname = "Doe",
+                email = "john.doe@test.com"
+            ),
+            clsdata = emptyMap(),
+            crmInsertedId = "C123"
+        )
+
+        every { exportBatchFailedCustomersUseCaseApi.execute(any()) } returns listOf(customer).stream()
+
+        // WHEN
+        val response: ResponseEntity<InputStreamResource> =
+            batchController.downloadFailedCaixaCustomerRecords(batchReference, listOf("CAIXA_MONITORING"))
+
+        // THEN
+        assertNotNull(response)
+        assertNotNull(response.body)
+        assertTrue(response.headers.containsKey("Content-Disposition"))
+        val contentDisposition = response.headers["Content-Disposition"]!!.first()
+        assertTrue(contentDisposition.contains(batchReference))
+    }
+}
