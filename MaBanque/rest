@@ -1,0 +1,57 @@
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.servlet.http.HttpServletResponse
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
+import org.springframework.http.MediaType
+import org.springframework.security.core.AuthenticationException
+import java.io.PrintWriter
+import java.io.StringWriter
+
+@DisplayName("RestExceptionHandler - Security Handlers")
+class SecurityHandlersTest {
+
+    @Test
+    fun `BlmAuthEntryPoint should respond 401 with correct message`() {
+        // GIVEN
+        val request: HttpServletRequest = mock()
+        val response: HttpServletResponse = mock()
+        val writerString = StringWriter()
+        whenever(response.writer).thenReturn(PrintWriter(writerString))
+        val authException: AuthenticationException = mock()
+        val entryPoint = BlmAuthEntryPoint()
+
+        // WHEN
+        entryPoint.commence(request, response, authException)
+
+        // THEN
+        verify(response).status = HttpServletResponse.SC_UNAUTHORIZED
+        verify(response).contentType = MediaType.TEXT_PLAIN_VALUE
+        val output = writerString.toString()
+        assert(output.contains("ERROR 401 UNAUTHORIZED"))
+        assert(output.contains("Authentication failed"))
+    }
+
+    @Test
+    fun `BLmAccessDeniedHandler should respond 403 with correct message`() {
+        // GIVEN
+        val request: HttpServletRequest = mock()
+        val response: HttpServletResponse = mock()
+        val writerString = StringWriter()
+        whenever(response.writer).thenReturn(PrintWriter(writerString))
+        val accessDeniedHandler = BLmAccessDeniedHandler()
+        val accessDeniedException = org.springframework.security.access.AccessDeniedException("Access denied")
+
+        // WHEN
+        accessDeniedHandler.handle(request, response, accessDeniedException)
+
+        // THEN
+        verify(response).status = HttpServletResponse.SC_FORBIDDEN
+        verify(response).contentType = MediaType.TEXT_PLAIN_VALUE
+        val output = writerString.toString()
+        assert(output.contains("ERROR 403 FORBIDDEN"))
+        assert(output.contains("Access denied"))
+    }
+}
