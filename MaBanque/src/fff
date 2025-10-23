@@ -1,0 +1,76 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import io.mockk.every
+import io.mockk.mockk
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
+import java.util.stream.Stream
+import org.springframework.core.io.InputStreamResource
+import org.springframework.http.ResponseEntity
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+@DisplayName("BatchController - downloadFailedCaixaCustomerRecords")
+class BatchControllerTest {
+
+    private val exportBatchFailedCustomersUseCaseApi = mockk<ExportBatchFailedCustomersUseCaseApi>(relaxed = true)
+    private val getFailedEventMessageUseCaseApi = mockk<GetFailedEventMessageUseCaseApi>(relaxed = true)
+    private val blmAccessAuthorization = mockk<BlmImportAuthorizationProperties>(relaxed = true)
+
+    private val batchController = BatchController(
+        listBatchesUseCaseApi = mockk(relaxed = true),
+        batchImportOverviewUseCase = mockk(relaxed = true),
+        getBatchSummaryUseCaseApi = mockk(relaxed = true),
+        getBatchEventsUseCaseApi = mockk(relaxed = true),
+        exportEventsUseCaseApi = mockk(relaxed = true),
+        exportBatchFailedCustomersUseCaseApi = exportBatchFailedCustomersUseCaseApi,
+        getFailedEventMessageUseCaseApi = getFailedEventMessageUseCaseApi,
+        blmAccessAuthorization = blmAccessAuthorization
+    )
+
+    @Test
+    fun `should export failed caixa customer records as CSV`() {
+        // GIVEN
+        val batchReference = "BATCH123"
+        val crmCustomer = CrmClsCustomerData(
+            id = "1",
+            batchId = batchReference,
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId("ABCDEFGHIJ"),
+                rowReference = ReferenceId("1234567890")
+            ),
+            rowNumber = 1,
+            combata = CrmData(
+                forename = "John",
+                surname = "Doe",
+                email = "john.doe@test.com",
+                contactRole = "Driver",
+                fiscalCode = "ABC123XYZ",
+                gender = "M",
+                salutation = "Mr."
+            ),
+            clsData = mapOf(
+                "clsCustomerType" to "TypeA",
+                "clsCustomerProspect" to "No"
+            ),
+            crmInsertedId = "CUST12345"
+        )
+
+        every { exportBatchFailedCustomersUseCaseApi.execute(ReferenceId(batchReference)) } returns Stream.of(crmCustomer)
+        every { getFailedEventMessageUseCaseApi.execute(any()) } returns "Test error message"
+
+        // WHEN
+        val response: ResponseEntity<InputStreamResource> =
+            batchController.downloadFailedCaixaCustomerRecords(batchReference, userRoles = emptyList())
+
+        // THEN
+        assertEquals("attachment; filename=\"batch-$batchReference-failed-caixa-records.csv\"",
+            response.headers["Content-Disposition"]?.first())
+
+        val csvContent = InputStreamReader(response.body!!.inputStream, StandardCharsets.UTF_8).readText()
+        assertTrue(csvContent.contains("John"))
+        assertTrue(csvContent.contains("Doe"))
+        assertTrue(csvContent.contains("Test error message"))
+        assertTrue(csvContent.contains("Driver"))
+    }
+}
