@@ -1,0 +1,11 @@
+verify(exactly = 1) {
+    handleClsContactFeedbackUseCaseApi.invoke(
+        clsContactDataFeedbackPayload = match { payload ->
+            payload.countryCode.value.trim().uppercase() == country.trim().uppercase() &&
+            payload.reconciliationId.print() == ReconciliationId.parse(reconciliationId).print() &&
+            payload.scope.orEmpty() == scope.orEmpty() &&
+            payload.status.name == status &&
+            payload.errorMessage.orEmpty() == errorMessage.orEmpty()
+        }
+    )
+}
