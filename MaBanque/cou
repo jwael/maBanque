@@ -1,0 +1,57 @@
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.runs
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+
+@DisplayName("ClsKafkaListener - acceptClsContactRequest")
+class ClsKafkaListenerTest {
+
+    private val handLeClsContactRequestUseCaseApi =
+        mockk<HandLeClsContactRequestUseCaseApi>(relaxed = true)
+
+    private val listener = ClsKafkaListener(
+        handLeClsContactRequestUseCaseApi = handLeClsContactRequestUseCaseApi
+    )
+
+    @ParameterizedTest
+    @CsvSource(
+        "FR, ABC1234567-XYZ9876543, ROLE123, CLS001",
+        "DE, DEF9876543-UVW1234567, ROLE456, CLS002"
+    )
+    fun `should invoke use case with correct payload`(
+        country: String,
+        reconciliationId: String,
+        roleSalesForceId: String,
+        clsId: String
+    ) {
+        // GIVEN
+        val kafkaMessage = ClsRequestContactKafkaMessage(
+            clsId = clsId,
+            contactRoleSalesforceID = roleSalesForceId
+        )
+
+        // Configure le mock pour Unit
+        every { handLeClsContactRequestUseCaseApi.invoke(any()) } just runs
+
+        // WHEN
+        listener.acceptClsContactRequest(
+            countryHeader = country,
+            reconciliationIdHeader = reconciliationId,
+            clsRequestContactKafkaMessage = kafkaMessage
+        )
+
+        // THEN
+        // Vérifie que invoke a été appelé avec le payload attendu
+        val expectedPayload = ClsContactDataRequestPayload(
+            countryCode = CountryCode(country),
+            reconciliationId = ReconciliationId.parse(reconciliationId),
+            contactRoleSalesForceId = roleSalesForceId,
+            clsId = clsId
+        )
+        io.mockk.verify(exactly = 1) {
+            handLeClsContactRequestUseCaseApi.invoke(expectedPayload)
+        }
+    }
+}
