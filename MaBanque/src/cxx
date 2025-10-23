@@ -1,0 +1,97 @@
+@Test
+fun `should export failed CAIXA customers to CSV correctly`() {
+    // GIVEN
+    val batchReference = "BATCH_CAIXA_001"
+    val userRoles = listOf("CAIXA_MONITORING")
+
+    val mockCustomers = listOf(
+        CrmClsContactData(
+            id = "C1",
+            batchId = batchReference,
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId(batchReference),
+                rowReference = ReferenceId("R1")
+            ),
+            rowNumber = 1,
+            crmData = CrmData(
+                firstName = "Alice",
+                surname = "Smith",
+                email = "alice.smith@test.com",
+                contactRole = "Driver",
+                businessManager = "Manager A",
+                fiscalCode = "FX12345",
+                gender = "F",
+                salutation = "Mrs.",
+                jobTitle = "Lead Manager"
+            ),
+            clsData = mapOf(
+                "clsSectorOfActivity" to "Retail",
+                "clsCustomerType" to "Business"
+            ),
+            crmInsertedId = "CRM001"
+        ),
+        CrmClsContactData(
+            id = "C2",
+            batchId = batchReference,
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId(batchReference),
+                rowReference = ReferenceId("R2")
+            ),
+            rowNumber = 2,
+            crmData = CrmData(
+                firstName = "Bob",
+                surname = "Jones",
+                email = "bob.jones@test.com",
+                contactRole = "Owner",
+                businessManager = "Manager B",
+                fiscalCode = "FX67890",
+                gender = "M",
+                salutation = "Mr.",
+                jobTitle = "Director"
+            ),
+            clsData = mapOf(
+                "clsSectorOfActivity" to "Finance",
+                "clsCustomerType" to "Individual"
+            ),
+            crmInsertedId = "CRM002"
+        )
+    )
+
+    every {
+        exportBatchFailedCustomersUseCaseApi.execute(
+            batchReference = ReferenceId(batchReference)
+        )
+    } returns mockCustomers.stream()
+
+    every {
+        getFailedEventMessageUseCaseApi.execute(any())
+    } returns "CRM failure: missing data"
+
+    // WHEN
+    val response = batchController.downloadFailedCaixaCustomerRecords(
+        batchReference = batchReference,
+        userRoles = userRoles
+    )
+
+    // THEN
+    assertEquals(200, response.statusCode.value())
+    val headerValue = response.headers["Content-Disposition"]?.first()
+    assertTrue(headerValue!!.contains("batch-$batchReference-failed-caixa-records.csv"))
+
+    val csvContent = BufferedReader(InputStreamReader(response.body!!.inputStream, Charsets.UTF_8)).readText()
+
+    // ✅ Vérifie présence du BOM UTF-8
+    assertTrue(csvContent.startsWith("\uFEFF"))
+
+    // ✅ Vérifie les entêtes CSV et le contenu des données
+    val lines = csvContent.lines().filter { it.isNotBlank() }
+    assertTrue(lines.first().contains("errorMessage", ignoreCase = true))
+
+    // ✅ Vérifie que les données clients sont exportées
+    assertTrue(lines.any { it.contains("Alice") && it.contains("CRM failure") })
+    assertTrue(lines.any { it.contains("Bob") && it.contains("CRM failure") })
+
+    // ✅ Vérifie quelques champs métier importants
+    assertTrue(lines.any { it.contains("Driver") })
+    assertTrue(lines.any { it.contains("Finance") })
+}
