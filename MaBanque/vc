@@ -1,0 +1,53 @@
+package com.arval.blm.infrastructure.configuration.security
+
+import org.hamcrest.Matchers.containsString
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+
+@SpringBootTest
+@AutoConfigureMockMvc
+class RestSecurityConfigurationIntegrationTest {
+
+    @Autowired
+    lateinit var mockMvc: MockMvc
+
+    @ParameterizedTest(name = "⛔ {0} → attendu: {2}")
+    @CsvSource(
+        // endpoint, role, expectedStatus, expectedMessage
+        "/api/v1/customers/caixa/import,ANONYMOUS,401,ERROR 401 UNAUTHORIZED",
+        "/api/v1/customers/caixa/import,USER,403,ERROR 403 FORBIDDEN",
+        "/api/v1/customers/caixa/import,CAIXA_IMPORT,200,OK",
+        "/swagger-ui/index.html,ANONYMOUS,200,OK",
+        "/api/v1/debug/info,ANONYMOUS,200,OK"
+    )
+    fun `should enforce correct access rules`(
+        endpoint: String,
+        role: String,
+        expectedStatus: Int,
+        expectedMessage: String
+    ) {
+        val requestBuilder = get(endpoint)
+
+        val mvcResult = when (role) {
+            "ANONYMOUS" -> mockMvc.perform(requestBuilder)
+            else -> mockMvc.perform(requestBuilder.with(user("testUser").roles(role)))
+        }
+
+        when (expectedStatus) {
+            200 -> mvcResult.andExpect(status().isOk)
+            401 -> mvcResult.andExpect(status().isUnauthorized)
+                .andExpect(content().string(containsString("ERROR 401 UNAUTHORIZED")))
+            403 -> mvcResult.andExpect(status().isForbidden)
+                .andExpect(content().string(containsString("ERROR 403 FORBIDDEN")))
+            else -> error("Unhandled expected status $expectedStatus")
+        }
+    }
+}
