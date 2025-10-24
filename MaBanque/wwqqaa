@@ -1,0 +1,48 @@
+class ClsKafkaListenerEpartnerCustomerFeedbackTest {
+
+    private val handleClsCustomerSendingUseCaseApi = mockk<HandleClsCustomerSendingUseCaseApi>(relaxed = true)
+
+    private val listener = spyk(
+        ClsKafkaListener(
+            handleClsCustomerRequestUseCaseApi = mockk(relaxed = true),
+            handleClsCustomerFeedbackUseCaseApi = mockk(relaxed = true),
+            handleClsCustomerSendingUseCaseApi = handleClsCustomerSendingUseCaseApi,
+            handleClsContactRequestUseCaseApi = mockk(relaxed = true),
+            handleClsContactFeedbackUseCaseApi = mockk(relaxed = true)
+        )
+    )
+
+    @ParameterizedTest
+    @CsvSource(
+        "FR, 1, ACTIVE",
+        "DE, 2, INACTIVE"
+    )
+    fun `should invoke customer sending use case with correct e-partner payload`(
+        country: String,
+        rowNumber: Int,
+        status: String
+    ) {
+        // GIVEN
+        val message = ClsEpartnerCustomerKafkaMessage(
+            rowNumber = rowNumber,
+            status = status
+        )
+
+        // WHEN
+        listener.acceptClsEpartnerCustomerFeedback(
+            countryHeader = country,
+            clsEpartnerCustomerKafkaMessage = message
+        )
+
+        // THEN
+        verify(exactly = 1) {
+            handleClsCustomerSendingUseCaseApi.invoke(
+                countryCode = country,
+                customerPayload = match { payload ->
+                    payload.rowNumber == rowNumber &&
+                    payload.status == status
+                }
+            )
+        }
+    }
+}
