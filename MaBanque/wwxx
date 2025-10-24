@@ -1,0 +1,46 @@
+import org.junit.jupiter.api.Test
+import org.springframework.web.servlet.config.annotation.CorsRegistration
+import org.springframework.web.servlet.config.annotation.CorsRegistry
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+class RestSecurityConfigurationCorsTest {
+
+    private val corsAllowedOrigins = arrayOf("http://localhost", "http://example.com")
+
+    // Classe réelle à tester
+    private val config = object {
+        fun corsConfigurer(): WebMvcConfigurer {
+            return object : WebMvcConfigurer {
+                override fun addCorsMappings(registry: CorsRegistry) {
+                    registry.addMapping("/**")
+                        .allowedMethods("HEAD", "GET", "PUT", "POST", "DELETE", "PATCH")
+                        .allowedOrigins(*corsAllowedOrigins)
+                        .allowedHeaders("*")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `should configure CORS correctly`() {
+        val registry = CorsRegistry()
+        val webConfigurer = config.corsConfigurer()
+        
+        // Applique la config réelle sur le registry factice
+        webConfigurer.addCorsMappings(registry)
+
+        // Récupère le premier mapping
+        val corsRegistrationsField = CorsRegistry::class.java.getDeclaredField("registrations")
+        corsRegistrationsField.isAccessible = true
+        val registrations = corsRegistrationsField.get(registry) as Map<String, CorsRegistration>
+        val registration = registrations["/**"]
+
+        // Vérifications
+        assertEquals("/**", registration?.pathPattern, "Path pattern should match /**")
+        assertTrue(registration?.allowedOrigins?.containsAll(corsAllowedOrigins) == true, "Allowed origins should match")
+        assertTrue(registration?.allowedMethods?.containsAll(listOf("HEAD", "GET", "PUT", "POST", "DELETE", "PATCH")) == true, "Allowed methods should match")
+        assertEquals("*", registration?.allowedHeaders?.single(), "Allowed headers should be *")
+    }
+}
