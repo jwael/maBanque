@@ -1,0 +1,77 @@
+package com.arval.blm.infrastructure.configuration.crm
+
+import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.databind.DeserializationFeature
+import okhttp3.OkHttpClient
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+import retrofit2.Retrofit
+import retrofit2.converter.jackson.JacksonConverterFactory
+import java.net.InetSocketAddress
+import java.net.Proxy
+
+class CrmClientConfigRealTest {
+
+    @Test
+    fun `should create real CrmClient with correct Retrofit configuration`() {
+        // GIVEN
+        val crmProperties = CrmProperties(
+            url = "https://crm-test.arval.com/",
+            clientid = "client-id",
+            clientSecret = "client-secret",
+            grantType = "client_credentials",
+            tokenUrl = "https://crm-test.arval.com/token"
+        )
+
+        val config = CrmClientConfig(crmProperties).apply {
+            arvalProxyUrl = "proxy.intra.corp"
+        }
+
+        // WHEN
+        val crmClient = config.createCrmClient()
+
+        // THEN
+        assertNotNull(crmClient, "CrmClient should not be null")
+        assertTrue(crmClient is CrmClient, "Returned instance should implement CrmClient")
+
+        val retrofit = Retrofit.Builder()
+            .baseUrl(crmProperties.url)
+            .addConverterFactory(JacksonConverterFactory.create(invokePrivate(config, "createJacksonMapper")))
+            .client(invokePrivate(config, "createOkHttpClient"))
+            .build()
+
+        assertEquals(crmProperties.url, retrofit.baseUrl().toString())
+        assertTrue(retrofit.converterFactories().any { it is JacksonConverterFactory })
+    }
+
+    @Test
+    fun `should create Jackson mapper with expected configuration`() {
+        val config = CrmClientConfig(CrmProperties("url", "id", "secret", "grant", "token"))
+        val mapper = invokePrivate(config, "createJacksonMapper")
+
+        assertNotNull(mapper)
+        assertFalse(mapper.isEnabled(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES))
+        assertEquals(JsonInclude.Include.NON_NULL, mapper.serializationConfig.serializationInclusion)
+    }
+
+    @Test
+    fun `should create OkHttp client with proxy and interceptors`() {
+        val config = CrmClientConfig(CrmProperties("url", "id", "secret", "grant", "token")).apply {
+            arvalProxyUrl = "proxy.intra.corp"
+        }
+        val client: OkHttpClient = invokePrivate(config, "createOkHttpClient")
+
+        assertNotNull(client)
+        assertNotNull(client.proxy())
+        assertEquals(Proxy.Type.HTTP, client.proxy()!!.type())
+        assertEquals(InetSocketAddress("proxy.intra.corp", 8080), client.proxy()!!.address())
+    }
+
+    // -- helper reflection function
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> invokePrivate(instance: Any, methodName: String): T {
+        val method = instance::class.java.getDeclaredMethod(methodName)
+        method.isAccessible = true
+        return method.invoke(instance) as T
+    }
+}
