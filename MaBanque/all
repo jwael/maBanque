@@ -1,0 +1,50 @@
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+import org.springframework.web.servlet.config.annotation.CorsRegistry
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+
+class RestSecurityConfigurationCorsTest {
+
+    private val corsAllowedOrigins = arrayOf("http://localhost", "http://example.com")
+
+    private val config = object : RestSecurityConfiguration() {
+        override val corsAllowedOrigins: Array<String> = this@RestSecurityConfigurationCorsTest.corsAllowedOrigins
+    }
+
+    @Test
+    fun `corsConfigurer should register correct CORS mappings`() {
+        // GIVEN
+        val registry = CorsRegistry()
+
+        // WHEN
+        val webMvcConfigurer: WebMvcConfigurer = config.corsConfigurer()
+        webMvcConfigurer.addCorsMappings(registry)
+
+        // THEN
+        val mappings = registry.mappings
+        assertFalse(mappings.isEmpty(), "There should be at least one CORS mapping registered")
+
+        // On récupère la registration pour le pattern "/**"
+        val corsRegistration = mappings.firstOrNull { it.pathPattern == "/**" }
+        assertNotNull(corsRegistration, "A CORS registration for /** should exist")
+
+        // Vérifie les méthodes autorisées
+        val expectedMethods = listOf("HEAD", "GET", "PUT", "POST", "DELETE", "PATCH")
+        assertTrue(
+            corsRegistration!!.allowedMethods.containsAll(expectedMethods),
+            "Allowed methods should match $expectedMethods"
+        )
+
+        // Vérifie les origines autorisées
+        assertTrue(
+            corsRegistration.allowedOrigins.containsAll(corsAllowedOrigins),
+            "Allowed origins should match ${corsAllowedOrigins.toList()}"
+        )
+
+        // Vérifie que tous les headers sont autorisés
+        assertTrue(
+            corsRegistration.allowedHeaders.contains("*"),
+            "Allowed headers should be '*'"
+        )
+    }
+}
