@@ -1,0 +1,32 @@
+import org.junit.jupiter.api.Test
+import org.springframework.web.servlet.config.annotation.CorsRegistry
+import kotlin.test.assertTrue
+
+class RestSecurityConfigurationRealTest {
+
+    private val blmAccessDeniedHandler = BLmAccessDeniedHandler()
+    private val blmAuthEntryPoint = BlmAuthEntryPoint()
+    private val corsAllowedOrigins = arrayOf("http://localhost", "http://example.com")
+
+    private val configuration = RestSecurityConfiguration(
+        corsAllowedOrigins = corsAllowedOrigins,
+        caixaImportClientId = "CAIXA_IMPORT",
+        caixaImportClientSecret = "secret",
+        bLmAccessDeniedHandler = blmAccessDeniedHandler,
+        blmAuthEntryPoint = blmAuthEntryPoint
+    )
+
+    @Test
+    fun `corsConfigurer should execute without exception and register mappings`() {
+        // GIVEN
+        val registry = CorsRegistry()
+
+        // WHEN
+        val webMvcConfigurer = configuration.corsConfigurer()
+        webMvcConfigurer.addCorsMappings(registry) // exécution réelle
+
+        // THEN
+        // Vérifie qu'au moins un mapping a été ajouté
+        assertTrue(registry.mappings.isNotEmpty(), "CorsRegistry should have at least one mapping")
+    }
+}
