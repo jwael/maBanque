@@ -1,0 +1,49 @@
+package com.arval.blm.infrastructure.configuration.crm
+
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+import retrofit2.Retrofit
+import retrofit2.converter.jackson.JacksonConverterFactory
+
+class CrmClientConfigIntegrationTest {
+
+    @Test
+    fun `should build real CrmClient with correct configuration`() {
+        // GIVEN
+        val crmProperties = CrmProperties(
+            url = "https://crm-test.arval.com/",
+            clientid = "client-id",
+            clientSecret = "secret",
+            grantType = "client_credentials",
+            tokenUrl = "https://crm-test.arval.com/token"
+        )
+
+        val config = CrmClientConfig(crmProperties)
+
+        // WHEN
+        val crmClient = config.createCrmClient()
+
+        // THEN
+        assertNotNull(crmClient)
+        assertTrue(crmClient is CrmClient)
+
+        // vérifie que Retrofit est bien configuré
+        val retrofitField = crmClient!!::class.java.declaringClass
+        val retrofitInstance = Retrofit.Builder()
+            .baseUrl(crmProperties.url)
+            .addConverterFactory(JacksonConverterFactory.create(config.createJacksonMapper()))
+            .client(config.createOkHttpClient())
+            .build()
+
+        assertEquals(
+            crmProperties.url,
+            retrofitInstance.baseUrl().toString(),
+            "Base URL should match CRM properties"
+        )
+
+        assertTrue(
+            retrofitInstance.converterFactories().any { it is JacksonConverterFactory },
+            "JacksonConverterFactory should be present"
+        )
+    }
+}
