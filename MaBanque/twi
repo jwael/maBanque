@@ -1,0 +1,96 @@
+class ClsKafkaListenerEpartnerCustomerFeedbackFullTest {
+
+    private val handleClsCustomerSendingUseCaseApi = mockk<HandleClsCustomerSendingUseCaseApi>(relaxed = true)
+
+    private val listener = ClsKafkaListener(
+        handleClsCustomerRequestUseCaseApi = mockk(relaxed = true),
+        handleClsCustomerFeedbackUseCaseApi = mockk(relaxed = true),
+        handleClsCustomerSendingUseCaseApi = handleClsCustomerSendingUseCaseApi,
+        handleClsContactRequestUseCaseApi = mockk(relaxed = true),
+        handleClsContactFeedbackUseCaseApi = mockk(relaxed = true)
+    )
+
+    @Test
+    fun `should invoke customer sending use case with all e-partner payload fields`() {
+        // GIVEN
+        val message = ClsEpartnerCustomerKafkaMessage(
+            mainCountry = "FR",
+            persAcctPartnerNetwork = "Réseau A",
+            persAcetsalutation = "M.",
+            persAcctFirstName = "Élodie",
+            persAcctLastName = "Dupont",
+            persAcctGender = "F",
+            persAcctIdentificationNumber = "ID987654",
+            persAcctType = "PROFESSIONNEL",
+            persAcctBirthDate = LocalDate.of(1985, 3, 21),
+            persAcctPersonalLandlinePhone = "0147258963",
+            persAcctPersonalEmail = "elodie.dupont@example.com",
+            persAcctPersonalAddressStreet = "Rue de la Paix",
+            persAcctPersonalAddressPostalCode = "75002",
+            persAcctPersonalAddressCountry = "FR",
+            persAcctPersonalAddressCity = "Paris",
+            persAcetPersonalAddressState = "Île-de-France",
+            persAcctPersonalAddressStreetNumber = "12",
+            clsTaxRegistrationNumber = "FR123456789",
+            clsForeignCompany = "Non",
+            clsFueldepositRequired = "Oui",
+            clsDateEstablished = LocalDate.of(2010, 5, 15),
+            clOwnerCompanyCode = "ENTR001",
+            clOwnerCompanyType = "SARL",
+            olsVatInvoiceFrequency = "TRIMESTRIEL",
+            clsGovBizIdSubCode = "GBS01",
+            olsSubGroupCode = "SGF01",
+            clsGroupCode = "GRP1",
+            clsCreditControllerCode = "CC01",
+            clsInvoicePolicyCode = "IP01",
+            clsSalesSubLedger = "SL01",
+            clsChargeGroup = "CHG01",
+            clsPersAcctFaxNumber = "0147258964",
+            clsBankAccountType = "Courant",
+            cLsBankAddressType = "Siège",
+            clsBankSortCode = "12345",
+            cLsBankAccountNumber = "FR7612345678901234567890123",
+            clsBankAccountName = "Dupont SARL",
+            clsBankPostCode = "75002",
+            clsBankAddress = "12 Rue de la Paix",
+            clsBankName = "Banque Populaire",
+            clAdvanceInvoice = "Oui",
+            clsCreditLimitExpiryDate = LocalDate.of(2025, 12, 31),
+            clsCreditLineId = 101,
+            cLsCostCentre = "CC01",
+            clsDecisionId = 202,
+            clsAuthOutLimitAmount = 15000,
+            clsQuoteld = 303,
+            clsQuoteRevision = 2,
+            clsBasReference = "BAS01",
+            persAcctPartnerBranchCode = "BR001",
+            partnerAccountId = "PA001",
+            roleCode = "driver"
+        )
+
+        // WHEN
+        listener.acceptClsEpartnerCustomerFeedback(
+            countryHeader = message.mainCountry!!,
+            clsEpartnerCustomerKafkaMessage = message
+        )
+
+        // THEN
+        verify(exactly = 1) {
+            handleClsCustomerSendingUseCaseApi.invoke(
+                countryCode = "FR",
+                customerPayload = match { payload ->
+                    payload.mainCountry == "FR" &&
+                    payload.persAcctFirstName == "Élodie" &&
+                    payload.persAcctLastName == "Dupont" &&
+                    payload.persAcctPersonalEmail == "elodie.dupont@example.com" &&
+                    payload.clsTaxRegistrationNumber == "FR123456789" &&
+                    payload.clsForeignCompany == "Non" &&
+                    payload.clsFueldepositRequired == "Oui" &&
+                    payload.clsDateEstablished == LocalDate.of(2010, 5, 15) &&
+                    payload.clOwnerCompanyCode == "ENTR001" &&
+                    payload.roleCode == "driver"
+                }
+            )
+        }
+    }
+}
