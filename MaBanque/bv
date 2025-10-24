@@ -1,0 +1,50 @@
+import org.junit.jupiter.api.Test
+import org.springframework.web.servlet.config.annotation.CorsRegistry
+import org.springframework.web.servlet.config.annotation.CorsRegistration
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+class RestSecurityConfigurationCorsTest {
+
+    private val corsAllowedOrigins = arrayOf("http://localhost", "http://example.com")
+    private val blmAccessDeniedHandler = BlmAccessDeniedHandler()
+    private val blmAuthEntryPoint = BlmAuthEntryPoint()
+
+    private val config = RestSecurityConfiguration(
+        corsAllowedOrigins = corsAllowedOrigins,
+        caixaImportClientId = "CAIXA",
+        caixaImportClientSecret = "secret",
+        blmAccessDeniedHandler = blmAccessDeniedHandler,
+        blmAuthEntryPoint = blmAuthEntryPoint
+    )
+
+    @Test
+    fun `should configure CORS with correct paths, origins and methods`() {
+        // GIVEN
+        val registry = CorsRegistry()
+
+        // WHEN
+        config.corsConfigurer().addCorsMappings(registry)
+
+        // THEN
+        // Récupérer la registration (le seul mapping qu'on a ajouté)
+        val registration: CorsRegistration? = registry.mappings.values.firstOrNull()
+        assertTrue(registration != null, "CorsRegistration should not be null")
+
+        // Vérifier path pattern
+        assertEquals("/**", registration!!.pathPattern, "Path pattern should match /**")
+
+        // Vérifier méthodes autorisées
+        val expectedMethods = setOf("HEAD", "GET", "PUT", "POST", "DELETE", "PATCH")
+        assertTrue(registration.allowedMethods?.toSet() == expectedMethods, "Allowed methods should match")
+
+        // Vérifier origines autorisées
+        assertTrue(
+            registration.allowedOrigins?.containsAll(corsAllowedOrigins) == true,
+            "Allowed origins should match the corsAllowedOrigins array"
+        )
+
+        // Vérifier headers autorisés
+        assertTrue(registration.allowedHeaders?.contains("*") == true, "Allowed headers should include '*'")
+    }
+}
