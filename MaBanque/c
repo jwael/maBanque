@@ -1,0 +1,8 @@
+@Test
+fun `corsConfigurer should execute without exception`() {
+    val registry = CorsRegistry()
+    val webMvcConfigurer = configuration.corsConfigurer()
+
+    // WHEN + THEN : on vérifie juste que ça s'exécute
+    webMvcConfigurer.addCorsMappings(registry)
+}
