@@ -1,0 +1,53 @@
+import io.mockk.every
+import io.mockk.spyk
+import io.mockk.verify
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.springframework.web.servlet.config.annotation.CorsRegistry
+import org.springframework.web.servlet.config.annotation.CorsRegistration
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+import kotlin.test.assertNotNull
+
+class RestSecurityConfigurationCorsTest {
+
+    private val blmAccessDeniedHandler = BLmAccessDeniedHandler()
+    private val blmAuthEntryPoint = BLmAuthEntryPoint()
+
+    @ParameterizedTest
+    @CsvSource(
+        "http://localhost",
+        "http://example.com",
+        "http://localhost,http://example.com"
+    )
+    fun `corsConfigurer should configure CorsRegistry with correct origins`(originsCsv: String) {
+        // GIVEN
+        val corsAllowedOrigins = originsCsv.split(",").toTypedArray()
+        val configuration = RestSecurityConfiguration(
+            corsAllowedOrigins = corsAllowedOrigins,
+            caixaImportClientId = "CAIXA_IMPORT",
+            caixaImportClientSecret = "secret",
+            bLmAccessDeniedHandler = blmAccessDeniedHandler,
+            blmAuthEntryPoint = blmAuthEntryPoint
+        )
+
+        val registry = spyk(CorsRegistry())
+        val registration = spyk(CorsRegistration("/**"))
+
+        // On redirige addMapping pour retourner notre spy de CorsRegistration
+        every { registry.addMapping("/**") } returns registration
+
+        val webMvcConfigurer: WebMvcConfigurer = configuration.corsConfigurer()
+
+        // WHEN
+        webMvcConfigurer.addCorsMappings(registry)
+
+        // THEN
+        verify { registry.addMapping("/**") }
+        verify { registration.allowedMethods("HEAD", "GET", "PUT", "POST", "DELETE", "PATCH") }
+        verify { registration.allowedOrigins(*corsAllowedOrigins) }
+        verify { registration.allowedHeaders("*") }
+
+        // Optionnel, juste pour coverage et sanity check
+        assertNotNull(webMvcConfigurer)
+    }
+}
