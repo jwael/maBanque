@@ -1,0 +1,54 @@
+import io.mockk.*
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+
+class ClsKafkaListenerCustomerTest {
+
+    private val handleClsCustomerRequestUseCaseApi = mockk<HandleClsCustomerRequestUseCaseApi>(relaxed = true)
+    private val listener = ClsKafkaListener(
+        handleClsCustomerRequestUseCaseApi = handleClsCustomerRequestUseCaseApi,
+        handleClsCustomerFeedbackUseCaseApi = mockk(relaxed = true),
+        handleClsCustomerSendingUseCaseApi = mockk(relaxed = true),
+        handleClsContactRequestUseCaseApi = mockk(relaxed = true),
+        handleClsContactFeedbackUseCaseApi = mockk(relaxed = true)
+    )
+
+    @ParameterizedTest
+    @CsvSource(
+        "FR, ABC1234567-XYZ9876543, CLS001, ROLE123",
+        "DE, DEF9876543-UVW1234567, CLS002, ROLE456"
+    )
+    fun `should invoke customer request use case with correct payload`(
+        country: String,
+        reconciliationId: String,
+        clsId: String,
+        contactRole: String
+    ) {
+        // GIVEN
+        val message = CLsRequestCustomerKafkaMessage(
+            clsId = clsId,
+            contactRoleSalesforceID = contactRole
+        )
+        val topicName = "sendingCaixaCustomerTopic" // utiliser la valeur réelle si nécessaire
+
+        // WHEN
+        listener.acceptClsCaixaCustomerRequest(
+            countryHeader = country,
+            reconciliationIdHeader = reconciliationId,
+            clsRequestCustomerKafkaMessage = message
+        )
+
+        // THEN
+        verify(exactly = 1) {
+            handleClsCustomerRequestUseCaseApi.invoke(
+                topicName = topicName,
+                clsCustomerDataRequestPayload = match { payload ->
+                    payload.countryCode.value == country &&
+                    payload.reconciliationId.print() == ReconciliationId.parse(reconciliationId).print() &&
+                    payload.clsId == clsId &&
+                    payload.contactRoleSalesForceId == contactRole
+                }
+            )
+        }
+    }
+}
