@@ -1,0 +1,40 @@
+import org.junit.jupiter.api.Test
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.setup.MockMvcBuilders
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+import org.springframework.web.servlet.config.annotation.CorsRegistry
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter
+import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.http.HttpMethod
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
+
+@RestController
+class DummyController {
+    @GetMapping("/dummy")
+    fun dummy() = "ok"
+}
+
+@Test
+fun `corsConfigurer should apply CORS headers`() {
+    val config = RestSecurityConfiguration(
+        corsAllowedOrigins = arrayOf("http://localhost"),
+        caixaImportClientId = "CAIXA_IMPORT",
+        caixaImportClientSecret = "secret",
+        bLmAccessDeniedHandler = BLmAccessDeniedHandler(),
+        blmAuthEntryPoint = BLmAuthEntryPoint()
+    )
+
+    val mvc: MockMvc = MockMvcBuilders.standaloneSetup(DummyController())
+        .setCustomArgumentResolvers() // pas besoin ici
+        .apply { config.corsConfigurer().addCorsMappings(CorsRegistry()) }
+        .build()
+
+    mvc.perform(options("/dummy")
+        .header("Origin", "http://localhost")
+        .header("Access-Control-Request-Method", HttpMethod.GET.name))
+        .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost"))
+        .andExpect(header().string("Access-Control-Allow-Methods", "HEAD,GET,PUT,POST,DELETE,PATCH"))
+}
