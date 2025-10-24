@@ -1,0 +1,38 @@
+import org.junit.jupiter.api.Test
+import io.mockk.spyk
+import io.mockk.verify
+import org.springframework.web.servlet.config.annotation.CorsRegistry
+
+class RestSecurityConfigurationCorsTest {
+
+    private val corsAllowedOrigins = arrayOf("http://localhost", "http://example.com")
+    private val blmAccessDeniedHandler = BLmAccessDeniedHandler()
+    private val blmAuthEntryPoint = BLmAuthEntryPoint()
+
+    // Instance réelle de ta configuration
+    private val configuration = RestSecurityConfiguration(
+        corsAllowedOrigins = corsAllowedOrigins,
+        caixaImportClientId = "CAIXA_IMPORT",
+        caixaImportClientSecret = "secret",
+        bLmAccessDeniedHandler = blmAccessDeniedHandler,
+        blmAuthEntryPoint = blmAuthEntryPoint
+    )
+
+    @Test
+    fun `corsConfigurer should configure CorsRegistry correctly`() {
+        // GIVEN : on spy le registry pour capturer les appels
+        val registry = spyk(CorsRegistry())
+
+        // WHEN : on appelle la vraie méthode
+        val webMvcConfigurer = configuration.corsConfigurer()
+        webMvcConfigurer.addCorsMappings(registry)
+
+        // THEN : on vérifie que la méthode a configuré le registry correctement
+        verify {
+            registry.addMapping("/**")
+            registry.addMapping("/**").allowedMethods("HEAD", "GET", "PUT", "POST", "DELETE", "PATCH")
+            registry.addMapping("/**").allowedOrigins(*corsAllowedOrigins)
+            registry.addMapping("/**").allowedHeaders("*")
+        }
+    }
+}
