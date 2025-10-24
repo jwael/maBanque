@@ -1,0 +1,59 @@
+class ClsKafkaListenerCustomerTest {
+
+    private val handleClsCustomerRequestUseCaseApi = mockk<HandleClsCustomerRequestUseCaseApi>(relaxed = true)
+
+    private val listener = spyk(
+        ClsKafkaListener(
+            handleClsCustomerRequestUseCaseApi = handleClsCustomerRequestUseCaseApi,
+            handleClsCustomerFeedbackUseCaseApi = mockk(relaxed = true),
+            handleClsCustomerSendingUseCaseApi = mockk(relaxed = true),
+            handleClsContactRequestUseCaseApi = mockk(relaxed = true),
+            handleClsContactFeedbackUseCaseApi = mockk(relaxed = true)
+        )
+    )
+
+    init {
+        // Initialisation du topic pour éviter UninitializedPropertyAccessException
+        listener.sendingCaixaCostumerTopicName = "sendingCaixaCustomerTopic"
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "FR, ABC1234567-XYZ9876543, ABC1234567-XYZ9876543-UVW1234567, TODO()",
+        "DE, DEF9876543-UVW1234567, DEF9876543-UVW1234567-XYZ1234567, TODO()"
+    )
+    fun `should invoke customer request use case with correct payload`(
+        country: String,
+        reconciliationId: String,
+        persAcctSalesforceID: String,
+        persAcctCLSAccountID: String
+    ) {
+        // GIVEN
+        val message = ClsRequestCustomerKafkaMessage(
+            persAcctSalesforceID = persAcctSalesforceID,
+            persAccType = "",
+            persAcctType = "",
+            persAcctCLSAccountID = persAcctCLSAccountID
+        )
+
+        // WHEN
+        listener.acceptClsCaixaCustomerRequest(
+            countryHeader = country,
+            reconciliationIdHeader = reconciliationId,
+            clsRequestCustomerKafkaMessage = message
+        )
+
+        // THEN
+        verify(exactly = 1) {
+            handleClsCustomerRequestUseCaseApi.invoke(
+                topicName = "sendingCaixaCustomerTopic",
+                clsCustomerDataRequestPayload = match { payload ->
+                    payload.countryCode.value == country &&
+                    payload.reconciliationId.print() == ReconciliationId.parse(reconciliationId).print() &&
+                    payload.persAcctSalesforceID == persAcctSalesforceID &&
+                    payload.persAcctCLSAccountID == persAcctCLSAccountID
+                }
+            )
+        }
+    }
+}
