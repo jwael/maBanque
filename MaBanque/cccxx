@@ -1,0 +1,62 @@
+package com.arval.blm.infrastructure.configuration.crm
+
+import io.mockk.*
+import okhttp3.OkHttpClient
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import retrofit2.Retrofit
+import retrofit2.converter.jackson.JacksonConverterFactory
+
+class CrmClientConfigTest {
+
+    private lateinit var crmProperties: CrmProperties
+    private lateinit var config: CrmClientConfig
+
+    @BeforeEach
+    fun setup() {
+        crmProperties = CrmProperties(
+            url = "https://crm-test.arval.com/",
+            clientid = "client-id",
+            clientSecret = "secret",
+            grantType = "password",
+            tokenUrl = "https://crm-test.arval.com/token"
+        )
+
+        config = spyk(CrmClientConfig(crmProperties))
+    }
+
+    @Test
+    fun `should create CrmClient with correct configuration`() {
+        // GIVEN
+        val mockConverterFactory = mockk<JacksonConverterFactory>()
+        val mockMapper = mockk<com.fasterxml.jackson.databind.ObjectMapper>()
+        val mockClient = mockk<OkHttpClient>()
+        val mockRetrofitBuilder = spyk(Retrofit.Builder())
+
+        mockkConstructor(Retrofit.Builder::class)
+        every { anyConstructed<Retrofit.Builder>().baseUrl(any<String>()) } returns mockRetrofitBuilder
+        every { mockRetrofitBuilder.addConverterFactory(any()) } returns mockRetrofitBuilder
+        every { mockRetrofitBuilder.client(any()) } returns mockRetrofitBuilder
+        every { mockRetrofitBuilder.build() } returns mockk(relaxed = true)
+        every { config["createJacksonMapper"]() } returns mockMapper
+        every { config["createOkHttpClient"]() } returns mockClient
+
+        mockkStatic(JacksonConverterFactory::class)
+        every { JacksonConverterFactory.create(mockMapper) } returns mockConverterFactory
+
+        // WHEN
+        val result = config.createCrmClient()
+
+        // THEN
+        verify {
+            anyConstructed<Retrofit.Builder>().baseUrl("https://crm-test.arval.com/")
+            JacksonConverterFactory.create(mockMapper)
+            mockRetrofitBuilder.addConverterFactory(mockConverterFactory)
+            mockRetrofitBuilder.client(mockClient)
+        }
+
+        assertNotNull(result, "CrmClient should not be null")
+        assertTrue(result is CrmClient)
+    }
+}
