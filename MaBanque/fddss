@@ -1,0 +1,49 @@
+class ClsKafkaListenerEpartnerCustomerRequestTest {
+
+    private val handleClsCustomerRequestUseCaseApi = mockk<HandleClsCustomerRequestUseCaseApi>(relaxed = true)
+
+    private val listener = ClsKafkaListener(
+        handleClsCustomerRequestUseCaseApi = handleClsCustomerRequestUseCaseApi,
+        handleClsCustomerFeedbackUseCaseApi = mockk(relaxed = true),
+        handleClsCustomerSendingUseCaseApi = mockk(relaxed = true),
+        handleClsContactRequestUseCaseApi = mockk(relaxed = true),
+        handleClsContactFeedbackUseCaseApi = mockk(relaxed = true)
+    )
+
+    @Test
+    fun `should invoke customer request use case with correct payload`() {
+        // GIVEN
+        val message = ClsRequestCustomerKafkaMessage(
+            persAcctSalesforceID = "FR1234567-XYZ9876543",
+            persAcctType = "PROFESSIONNEL",
+            persAcctCLSAccountID = "CLS001",
+            persAcctFirstName = "Julien",
+            persAcctLastName = "Moreau",
+            persAcctEmail = "julien.moreau@example.com",
+            persAcctPhone = "0147258963"
+        )
+
+        val country = "FR"
+        val reconciliationId = "ABC1234567-XYZ9876543"
+
+        // WHEN
+        listener.acceptClsEpartnerCustomerRequest(
+            countryHeader = country,
+            reconciliationIdHeader = reconciliationId,
+            clsRequestCustomerKafkaMessage = message
+        )
+
+        // THEN
+        verify(exactly = 1) {
+            handleClsCustomerRequestUseCaseApi.invoke(
+                topicName = match { it.isNotBlank() }, // si tu as un topicName à passer
+                clsCustomerDataRequestPayload = match { payload ->
+                    payload.countryCode.value == country &&
+                    payload.reconciliationId.print() == reconciliationId &&
+                    payload.clsId == message.persAcctCLSAccountID &&
+                    payload.contactRoleSalesForceId == message.persAcctSalesforceID
+                }
+            )
+        }
+    }
+}
