@@ -1,0 +1,119 @@
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import java.util.stream.IntStream
+
+class ImportCustomerServiceTest {
+
+    private val referenceIdFactory: ReferenceIdFactory = mockk()
+    private val clockProvider: ClockProvider = mockk()
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk(relaxed = true)
+    private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk(relaxed = true)
+    private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk(relaxed = true)
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+    
+    private lateinit var importCustomerService: ImportCustomerService
+
+    private val batchReference = ReferenceId(value = "BATREF0010")
+    private val countryCodeFR = CountryCode(countryCode = "FR")
+
+    private val personalAccountsToImport = IntStream.range(0, 2).mapToObj {
+        CustomerPayload(
+            rowNumber = it + 1,
+            crmData = CrmData(
+                firstName = "Antoine$it",
+                surname = "Dupont$it",
+                contactRole = "prospect",
+                mainCountry = "FR"
+            ),
+            clsData = emptyMap(),
+            errorMessage = null
+        )
+    }.toList()
+
+    private val newBatch = LoaderBatch(
+        id = "BATCH_1",
+        reference = batchReference,
+        fileName = "customers.csv",
+        triggeredBy = "user1",
+        countryCode = countryCodeFR,
+        status = LoaderBatchStatus.RUNNING,
+        startDate = Instant.MIN,
+        endDate = Instant.MIN,
+        totalContacts = personalAccountsToImport.size,
+        type = LoaderBatchType.CONTACTS
+    )
+
+    @BeforeEach
+    fun setup() {
+        every { clockProvider.now() } returns Instant.parse("2025-10-14T00:00:00Z")
+        every { referenceIdFactory.generate() } returnsMany IntStream.range(1, 5)
+            .mapToObj { ReferenceId(value = it.toString().repeat(10)) }
+            .toList()
+        
+        // Les Spis sont "relaxed" donc save() et autres méthodes renvoient déjà des valeurs valides.
+        importCustomerService = ImportCustomerService(
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            clockProvider = clockProvider,
+            referenceIdFactory = referenceIdFactory,
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi = crmCustomerProviderSpi,
+            batchRepositorySpi = batchRepositorySpi
+        )
+    }
+
+    @Test
+    fun `apply should process all personal accounts successfully`() {
+        // When
+        importCustomerService.apply(newBatch, personalAccountsToImport)
+
+        // Then
+        // Chaque account doit être sauvegardé dans CRM
+        verify(exactly = personalAccountsToImport.size) { 
+            crmClsCustomerDataRepositorySpi.save(any()) 
+        }
+
+        // Chaque account doit créer un RecordStepEvent avec status OK et stepName valide
+        verify(exactly = personalAccountsToImport.size) {
+            recordStepEventRepositorySpi.save(
+                match {
+                    it.stepStatus == RecordStepStatus.OK &&
+                    it.stepName in listOf("BLM", "SF_CREATE", "SF_UPDATE", "SF_ROLE_CREATE", "SF_ROLE_UPDATE")
+                }
+            )
+        }
+    }
+
+    @Test
+    fun `apply should save KO status when personal account has error message`() {
+        val errorMessage = "Validation error"
+        val personalAccountWithError = CustomerPayload(
+            rowNumber = 1,
+            crmData = CrmData(
+                firstName = "Error",
+                surname = "User",
+                contactRole = "prospect",
+                mainCountry = "FR"
+            ),
+            clsData = emptyMap(),
+            errorMessage = errorMessage
+        )
+
+        val accounts = listOf(personalAccountWithError)
+
+        importCustomerService.apply(newBatch, accounts)
+
+        verify {
+            recordStepEventRepositorySpi.save(
+                match {
+                    it.stepStatus == RecordStepStatus.KO &&
+                    it.stepName == "BLM" &&
+                    it.stepMessage == errorMessage
+                }
+            )
+        }
+    }
+}
