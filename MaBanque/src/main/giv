@@ -1,0 +1,70 @@
+// --- Mocks / Dépendances
+private val referenceIdFactory: ReferenceIdFactory = mockk {
+    every { generate() } returnsMany IntStream.range(1, 9)
+        .mapToObj { ReferenceId(value = it.toString().repeat(10)) }
+        .toList()
+}
+
+private val clockProvider: ClockProvider = mockk {
+    every { now() } returns Instant.MIN
+}
+
+private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk(relaxed = true)
+private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk(relaxed = true)
+private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk(relaxed = true)
+
+// --- Données communes
+private val personalAccountsCount = 2
+private val personalAccountsToCreate: List<CustomerPayload> = IntStream.range(0, personalAccountsCount)
+    .mapToObj {
+        CustomerPayload(
+            rowNumber = it + 1,
+            errorMessage = null,
+            crmData = Instancio.of(CrmData::class.java)
+                .set(CrmData::salesforceRoleId, null)
+                .set(CrmData::salesforceCustomerId, null)
+                .set(CrmData::salutation, "Dr.")
+                .set(CrmData::title, "Dr.")
+                .set(CrmData::languageCode, "French")
+                .set(CrmData::sex, "Male")
+                .set(CrmData::customerRole, "Driver")
+                .set(CrmData::homeCountry, "FRANCE")
+                .set(CrmData::workCountry, "FRANCE")
+                .set(CrmData::homeProvince, "Norrland")
+                .set(CrmData::workProvince, "Norrland")
+                .create(),
+            clsData = emptyMap()
+        )
+    }
+    .toList()
+
+private val batchReference = ReferenceId(value = "BATCH_REF")
+private val countryCodeFR = CountryCode(countryCode = "FR")
+
+private val newBatch = LoaderBatch(
+    id = "AAAAA",
+    reference = batchReference,
+    fileName = "file.csv",
+    triggeredBy = "user-001",
+    countryCode = countryCodeFR,
+    status = LoaderBatchStatus.RUNNING,
+    startDate = Instant.MIN,
+    endDate = Instant.MIN,
+    totalContacts = personalAccountsCount,
+    type = LoaderBatchType.CUSTOMERS
+)
+
+// --- Service à tester
+private lateinit var importCustomerService: ImportCustomersService
+
+@BeforeEach
+fun setUp() {
+    importCustomerService = ImportCustomersService(
+        recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+        crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+        crmCustomerProviderSpi = crmCustomerProviderSpi,
+        batchRepositorySpi = batchRepositorySpi,
+        logger = mockk(relaxed = true)
+    )
+}
