@@ -1,0 +1,144 @@
+import io.mockk.*
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.*
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.Instant
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class ImportCustomerServiceTest {
+
+    // --- Dependencies (mockées)
+    private val recordStepEventRepositorySpi = mockk<RecordStepEventRepositorySpi>(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi = mockk<CrmClsCustomerDataRepositorySpi>(relaxed = true)
+    private val crmCustomerProviderSpi = mockk<CrmCustomerProviderSpi>(relaxed = true)
+    private val batchRepositorySpi = mockk<BatchRepositoryForContactsSpi>(relaxed = true)
+
+    // --- Service à tester
+    private lateinit var importCustomerService: ImportCustomersService
+
+    // --- Données communes
+    private lateinit var newBatch: LoaderBatch
+    private lateinit var personalAccount: CustomerPayload
+
+    @BeforeEach
+    fun setUp() {
+        importCustomerService = ImportCustomersService(
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi = crmCustomerProviderSpi,
+            batchRepositorySpi = batchRepositorySpi
+        )
+
+        newBatch = LoaderBatch(
+            id = "AAAAA",
+            reference = "BATCH_REF",
+            fileName = "file.csv",
+            triggeredBy = "user-001",
+            countryCode = "FR",
+            status = LoaderBatchStatus.RUNNING,
+            startDate = Instant.now(),
+            endDate = Instant.now(),
+            totalContacts = 1,
+            type = LoaderBatchType.CONTACTS
+        )
+
+        personalAccount = CustomerPayload(
+            rowNumber = 1,
+            errorMessage = null,
+            crmData = mapOf("customerId" to "CUST123")
+        )
+
+        // Mock des fonctions async/coroutines
+        coEvery { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+        coEvery { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+        coEvery { crmCustomerProviderSpi.createCrmCustomer(any()) } returns CrmCustomerResponsePayload(
+            crmAccountId = "ACC123",
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Customer created",
+            crmRoleId = null
+        )
+    }
+
+    @Nested
+    @DisplayName("apply() - personal accounts scenarios")
+    inner class ApplyTests {
+
+        @ParameterizedTest(name = "should process account with country {0}")
+        @CsvSource("FR", "IT", "UK")
+        fun `apply should process personal accounts successfully`(country: String) = runTest {
+            // Given
+            val account = personalAccount.copy(
+                crmData = mapOf("customerId" to "CUST123", "mainCountry" to country)
+            )
+            val accounts = listOf(account)
+
+            // When
+            importCustomerService.apply(newBatch, accounts)
+
+            // Then
+            coVerify {
+                crmClsCustomerDataRepositorySpi.save(match { it.crmData["customerId"] == "CUST123" })
+            }
+
+            coVerify {
+                recordStepEventRepositorySpi.save(match {
+                    it.batchId == newBatch.id &&
+                    it.rowNumber == account.rowNumber &&
+                    it.stepStatus == RecordStepStatus.OK
+                })
+            }
+        }
+
+        @Test
+        fun `apply should handle personal account with error message`() = runTest {
+            // Given
+            val accountWithError = personalAccount.copy(errorMessage = "Validation error")
+            val accounts = listOf(accountWithError)
+
+            // When
+            importCustomerService.apply(newBatch, accounts)
+
+            // Then
+            coVerify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
+
+            coVerify {
+                recordStepEventRepositorySpi.save(match {
+                    it.batchId == newBatch.id &&
+                    it.rowNumber == accountWithError.rowNumber &&
+                    it.stepStatus == RecordStepStatus.KO &&
+                    it.stepMessage == "Elpersona LAccount errorlessage?"
+                })
+            }
+        }
+
+        @Test
+        fun `apply should process create role scenario`() = runTest {
+            // Given
+            val account = personalAccount
+            val accounts = listOf(account)
+
+            // Simuler le retour d'un CRM créé
+            val savedData = spyk(CrmClsCustomerData(mapOf("customerId" to "CUST123"))) {
+                every { isCreateRole() } returns true
+            }
+
+            mockkObject(importCustomerService)
+            every { importCustomerService["processCustomerSavingInBlmStep"](any()) } returns savedData
+            coEvery { importCustomerService["processRoleCreationInCrmStep"](any()) } returns Unit
+
+            // When
+            importCustomerService.apply(newBatch, accounts)
+
+            // Then
+            coVerify { importCustomerService["processRoleCreationInCrmStep"](savedData) }
+        }
+
+        // Ici tu peux ajouter de la même façon :
+        // - role update
+        // - CRM update
+        // - customer creation
+        // en spyk/mockkObject pour les méthodes privées
+    }
+}
