@@ -1,0 +1,57 @@
+@Test
+fun `apply should process personalAccounts and handle errors`() {
+    // GIVEN
+    val customerWithoutError = CustomerPayload(
+        rowNumber = 1,
+        crmData = CrmData(
+            firstName = "Antoine",
+            surname = "Dupont",
+            contactRole = "prospect",
+            mainCountry = "FR"
+        ),
+        clsData = emptyMap()
+    )
+
+    val customerWithError = CustomerPayload(
+        rowNumber = 2,
+        crmData = CrmData(
+            firstName = "Error",
+            surname = "User",
+            contactRole = "prospect",
+            mainCountry = "FR"
+        ),
+        clsData = emptyMap(),
+        errorMessage = "Invalid data"
+    )
+
+    // On spy la classe pour pouvoir mocker les méthodes privées
+    val service = spyk(importCustomerService)
+
+    // Mock des méthodes privées pour matcher la logique Teach Lead
+    every { service["processCustomerSavingInBlmStep"](any()) } answers { firstArg() }
+    every { service["processCustomerCreationInCrmStep"](any()) } just Runs
+    every { service["processCustomerUpdateInCrmStep"](any()) } just Runs
+    every { service["processRoleCreationInCrmStep"](any()) } just Runs
+    every { service["processRoleUpdateInCrmStep"](any()) } just Runs
+
+    every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+
+    // WHEN
+    service.apply(batch, listOf(customerWithoutError, customerWithError))
+
+    // THEN
+    // Vérifie que processCustomerSavingInBlmStep est appelé pour tous les accounts
+    verify(exactly = 2) { service["processCustomerSavingInBlmStep"](any()) }
+
+    // Vérifie que processCustomerCreationInCrmStep est appelé pour l'account sans erreur
+    verify { service["processCustomerCreationInCrmStep"](match { it.crmData.firstName == "Antoine" }) }
+
+    // Vérifie que RecordStepEvent est sauvegardé pour l'account avec erreur
+    val stepEventSlot = slot<RecordStepEvent>()
+    verify { recordStepEventRepositorySpi.save(capture(stepEventSlot)) }
+
+    val savedEvent = stepEventSlot.captured
+    assertEquals(BLM, savedEvent.stepName)
+    assertEquals(KO, savedEvent.stepStatus)
+    assertEquals("Invalid data", savedEvent.stepMessage)
+}
