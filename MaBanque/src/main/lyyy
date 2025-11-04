@@ -1,0 +1,56 @@
+@Test
+fun `apply should process personal accounts with correct steps`() {
+    // GIVEN
+    val personalAccounts = listOf(
+        CustomerPayload(
+            rowNumber = 1,
+            crmData = CrmData(
+                firstName = "Antoine",
+                surname = "Dupont",
+                contactRole = "prospect",
+                mainCountry = "FR"
+            ),
+            clsData = emptyMap(),
+            errorMessage = null
+        ),
+        CustomerPayload(
+            rowNumber = 2,
+            crmData = CrmData(
+                firstName = "Marie",
+                surname = "Lepen",
+                contactRole = "client",
+                mainCountry = "IT"
+            ),
+            clsData = emptyMap(),
+            errorMessage = null
+        )
+    )
+
+    // Mock du CRM pour retourner un OK
+    every { crmCustomerProviderSpi.createCrmCustomer(any()) } returns CrmCustomerResponsePayload(
+        crmAccountId = "ACC123",
+        crmStatus = RecordStepStatus.OK,
+        crmMessage = "Customer created",
+        crmRoleId = null
+    )
+    every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+    every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+    every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+    // WHEN
+    importCustomerService.apply(batch, personalAccounts)
+
+    // THEN
+    // Vérifie que chaque CustomerPayload a été sauvegardé
+    verify(exactly = personalAccounts.size) { crmClsCustomerDataRepositorySpi.save(any()) }
+
+    // Vérifie que chaque step event a été créé
+    verify(exactly = personalAccounts.size) { recordStepEventRepositorySpi.save(match {
+        it.batchId == batch.id &&
+        it.stepStatus == RecordStepStatus.OK &&
+        it.stepName in listOf("BLM", "SF_CREATE", "SF_UPDATE", "SF_ROLE_CREATE", "SF_ROLE_UPDATE")
+    }) }
+
+    // Vérifie que le batch a été mis à jour au moins une fois
+    verify(atLeast = 1) { batchRepositorySpi.save(batch) }
+}
