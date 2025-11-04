@@ -1,0 +1,55 @@
+@Test
+fun `it should process customer update correctly`() {
+    // GIVEN
+    val crmCustomerResponsePayload = CrmCustomerResponsePayload(
+        crmAccountId = "ACC123",
+        crmStatus = RecordStepStatus.OK,
+        crmMessage = "Customer updated",
+        crmRoleId = null
+    )
+
+    val crmClsCustomerData = CrmClsCustomerData(
+        batchId = batch.id!!,
+        reconciliationId = ReconciliationId(batchReference = batch.reference, rowReference = ReferenceId("ROW0010001")),
+        rowNumber = 1,
+        rowReference = ReferenceId("ROW0010001"),
+        crmData = CrmData(
+            firstName = "Antoine",
+            surname = "Dupont",
+            contactRole = "prospect",
+            mainCountry = "FR"
+        ),
+        clsData = emptyMap(),
+        id = "CUST001",
+        crmInsertedId = null
+    )
+
+    every { crmCustomerProviderSpi.updateCrmCustomer(any()) } returns crmCustomerResponsePayload
+    every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+    every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+
+    // WHEN
+    importCustomerService.apply(batch, listOf(
+        CustomerPayload(
+            rowNumber = crmClsCustomerData.rowNumber,
+            crmData = crmClsCustomerData.crmData,
+            clsData = crmClsCustomerData.clsData
+        )
+    ))
+
+    // THEN
+    val savedSlot = slot<CrmClsCustomerData>()
+    verify { crmClsCustomerDataRepositorySpi.save(capture(savedSlot)) }
+
+    val savedCustomer = savedSlot.captured
+    assertEquals("ACC123", savedCustomer.crmInsertedId)
+    assertEquals("BATCH_1", savedCustomer.batchId)
+
+    val stepEventSlot = slot<RecordStepEvent>()
+    verify { recordStepEventRepositorySpi.save(capture(stepEventSlot)) }
+
+    val savedStepEvent = stepEventSlot.captured
+    assertEquals(SF_UPDATE, savedStepEvent.stepName)
+    assertEquals(RecordStepStatus.OK, savedStepEvent.stepStatus)
+    assertEquals("Customer updated", savedStepEvent.stepMessage)
+}
