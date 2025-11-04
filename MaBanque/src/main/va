@@ -1,0 +1,116 @@
+package com.arval.blm.core.application.service
+
+import com.arval.blm.core.domain.model.LoaderBatch
+import com.arval.blm.core.domain.model.LoaderBatchStatus
+import com.arval.blm.core.domain.model.LoaderBatchType
+import com.arval.blm.core.domain.model.customer.CustomerPayload
+import com.arval.blm.core.domain.spi.CrmClsCustomerDataRepositorySpi
+import com.arval.blm.core.domain.spi.RecordStepEventRepositorySpi
+import com.arval.blm.core.domain.spi.BatchRepositoryForContactsSpi
+import com.arval.blm.core.domain.spi.CrmCustomerProviderSpi
+import com.arval.blm.core.domain.model.contact.events.RecordStepStatus
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.Instant
+
+class ImportCustomersServiceTest {
+
+    // --- Dependencies (mockées)
+    private val recordStepEventRepositorySpi = mockk<RecordStepEventRepositorySpi>(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi = mockk<CrmClsCustomerDataRepositorySpi>(relaxed = true)
+    private val crmCustomerProviderSpi = mockk<CrmCustomerProviderSpi>(relaxed = true)
+    private val batchRepositorySpi = mockk<BatchRepositoryForContactsSpi>(relaxed = true)
+
+    // --- Service à tester
+    private lateinit var importCustomerService: ImportCustomersService
+
+    // --- Données communes
+    private lateinit var newBatch: LoaderBatch
+    private lateinit var personalAccount: CustomerPayload
+
+    @BeforeEach
+    fun setUp() {
+        importCustomerService = ImportCustomersService(
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi = crmCustomerProviderSpi,
+            batchRepositorySpi = batchRepositorySpi
+        )
+
+        newBatch = LoaderBatch(
+            id = "AAAAA",
+            reference = "BATCH_REF", // ⚠️ important sinon NPE dans ReconciliationId
+            fileName = "file.csv",
+            triggeredBy = "user-001",
+            countryCode = "FR",
+            status = LoaderBatchStatus.RUNNING,
+            startDate = Instant.now(),
+            endDate = Instant.now(),
+            totalContacts = 1,
+            type = LoaderBatchType.CONTACTS
+        )
+
+        personalAccount = CustomerPayload(
+            rowNumber = 1,
+            errorMessage = null,
+            crmData = mapOf("customerId" to "CUST123")
+        )
+    }
+
+    @Nested
+    @DisplayName("Apply() - Success Scenarios")
+    inner class ApplySuccessTests {
+
+        @ParameterizedTest
+        @CsvSource(
+            "CREATE, SF_CREATE",
+            "UPDATE, SF_UPDATE",
+            "ROLE_CREATE, SF_ROLE_CREATE",
+            "ROLE_UPDATE, SF_ROLE_UPDATE"
+        )
+        fun `should process personal accounts successfully`(type: String, stepName: String) {
+            // --- Given
+            val crmClsCustomerData = mockk<Any>(relaxed = true)
+            val savedCrmClsCustomerData = mockk<Any>(relaxed = true)
+
+            every {
+                importCustomerService["createCrmClsCustomerData"](any<LoaderBatch>(), any<CustomerPayload>())
+            } returns crmClsCustomerData
+
+            every {
+                importCustomerService["processCustomerSavingInBlmStep"](crmClsCustomerData)
+            } returns savedCrmClsCustomerData
+
+            // Simuler le comportement selon le type
+            when (type) {
+                "CREATE" -> every { savedCrmClsCustomerData["isCrmUpdate"]() } returns false
+                "UPDATE" -> every { savedCrmClsCustomerData["isCrmUpdate"]() } returns true
+                "ROLE_CREATE" -> every { savedCrmClsCustomerData["isCreateRole"]() } returns true
+                "ROLE_UPDATE" -> every { savedCrmClsCustomerData["isUpdateRole"]() } returns true
+            }
+
+            every { recordStepEventRepositorySpi.save(any()) } returns Unit
+
+            // --- When
+            importCustomerService.apply(newBatch, listOf(personalAccount))
+
+            // --- Then
+            verify(atLeast = 1) {
+                recordStepEventRepositorySpi.save(
+                    match {
+                        it.batchId == newBatch.id &&
+                        it.rowNumber == personalAccount.rowNumber &&
+                        it.stepStatus == RecordStepStatus.OK
+                    }
+                )
+            }
+        }
+    }
+}
