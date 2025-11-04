@@ -1,0 +1,75 @@
+class ImportCustomerServiceTest {
+
+    // Mocks
+    private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk(relaxed = true)
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+    private val clockProvider: ClockProvider = mockk()
+
+    private lateinit var importCustomerService: ImportCustomersService
+
+    @BeforeEach
+    fun setup() {
+        every { clockProvider.now() } returns Instant.parse("2025-10-14T00:00:00Z")
+
+        importCustomerService = ImportCustomersService(
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            clockProvider = clockProvider,
+            referenceIdFactory = mockk(),
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi = crmCustomerProviderSpi,
+            batchRepositorySpi = mockk(relaxed = true)
+        )
+    }
+
+    @Test
+    fun `processCustomerUpdateInCrmStep should save updated customer and record step events`() {
+        // GIVEN
+        val batchId = "BATCH_1"
+        val reconciliationId = ReconciliationId(batchReference = ReferenceId("BATREF0010"), rowReference = ReferenceId("ROW001"))
+        val crmCustomerData = CrmClsCustomerData(
+            batchId = batchId,
+            reconciliationId = reconciliationId,
+            rowNumber = 1,
+            rowReference = ReferenceId("ROW001"),
+            crmData = CrmData(mainCountry = "FRANCE", firstName = "John", surname = "Doe", contactRole = "Client"),
+            clsData = emptyMap(),
+            id = "CUST001",
+            crmInsertedId = null
+        )
+
+        val crmCustomerResponsePayload = CrmCustomerResponsePayload(
+            crmAccountId = "ACC123",
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Customer updated",
+            crmRoleId = null
+        )
+
+        every { crmCustomerProviderSpi.updateCrmCustomer(crmCustomerData) } returns crmCustomerResponsePayload
+        every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+        every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+
+        // WHEN
+        importCustomerService.apply { 
+            this.processCustomerUpdateInCrmStep(crmCustomerData) 
+        }
+
+        // THEN
+        val savedCustomers = mutableListOf<CrmClsCustomerData>()
+        val savedRecords = mutableListOf<RecordStepEvent>()
+
+        verify(exactly = 1) { crmClsCustomerDataRepositorySpi.save(capture(savedCustomers)) }
+        verify(exactly = 1) { recordStepEventRepositorySpi.save(capture(savedRecords)) }
+
+        // Vérifie les données sauvegardées
+        assertEquals("ACC123", savedCustomers[0].crmInsertedId)
+        assertTrue(savedCustomers[0].clsData.containsKey("SALESFORCE_ROLE_ID"))
+
+        // Vérifie les événements enregistrés
+        val recordEvent = savedRecords[0]
+        assertEquals(batchId, recordEvent.batchId)
+        assertEquals(1, recordEvent.rowNumber)
+        assertEquals(RecordStepStatus.OK, recordEvent.stepStatus)
+        assertEquals("Customer updated", recordEvent.stepMessage)
+    }
+}
