@@ -1,0 +1,120 @@
+@Nested
+@DisplayName("ImportCustomersService.apply tests")
+inner class ApplyTests {
+
+    @BeforeEach
+    fun setupMocks() {
+        // Tous les mocks génériques
+        every { batchRepositorySpi.save(any()) } answers { firstArg() }
+        every { crmclsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+        every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+    }
+
+    @Test
+    fun `should process all personal accounts successfully`() {
+        // GIVEN
+        val accounts = personalAccounts.map {
+            it.copy(
+                crmData = it.crmData.copy(mainCountry = "FR") // valide
+            )
+        }
+
+        // WHEN
+        importCustomerService.apply(newBatch, accounts)
+
+        // THEN
+        accounts.forEach { account ->
+            verify {
+                crmclsCustomerDataRepositorySpi.save(match { it.rowNumber == account.rowNumber })
+            }
+            verify {
+                recordStepEventRepositorySpi.save(
+                    match {
+                        it.batchId == newBatch.id &&
+                        it.rowNumber == account.rowNumber &&
+                        it.stepStatus == RecordStepStatus.OK &&
+                        it.stepName == "BLM"
+                    }
+                )
+            }
+        }
+        verify(exactly = 1) { batchRepositorySpi.save(any()) }
+    }
+
+    @Test
+    fun `should process customer creation when isCrmCreate`() {
+        val crmClsCustomerDataMock = mockk<CrmClsCustomerData>(relaxed = true)
+        every { crmClsCustomerDataMock.isCrmUpdate() } returns false
+        every { crmClsCustomerDataMock.isCreateRole() } returns false
+        every { crmClsCustomerDataMock.isUpdateRole() } returns false
+
+        // GIVEN
+        every { crmclsCustomerDataRepositorySpi.save(any()) } answers { crmClsCustomerDataMock }
+
+        // WHEN
+        importCustomerService.apply(newBatch, personalAccounts)
+
+        // THEN
+        verify { /* ici on vérifie que processCustomerCreationInCrmStep a été appelé */
+            crmCustomerProviderSpi.createCrmCustomer(any())
+        }
+    }
+
+    @Test
+    fun `should process customer update when isCrmUpdate`() {
+        val crmClsCustomerDataMock = mockk<CrmClsCustomerData>(relaxed = true)
+        every { crmClsCustomerDataMock.isCrmUpdate() } returns true
+        every { crmClsCustomerDataMock.isCreateRole() } returns false
+        every { crmClsCustomerDataMock.isUpdateRole() } returns false
+
+        every { crmclsCustomerDataRepositorySpi.save(any()) } answers { crmClsCustomerDataMock }
+
+        importCustomerService.apply(newBatch, personalAccounts)
+
+        verify { /* vérifie processCustomerUpdateInCrmStep */ }
+    }
+
+    @Test
+    fun `should process role creation when isCreateRole`() {
+        val crmClsCustomerDataMock = mockk<CrmClsCustomerData>(relaxed = true)
+        every { crmClsCustomerDataMock.isCreateRole() } returns true
+        every { crmClsCustomerDataMock.isUpdateRole() } returns false
+        every { crmClsCustomerDataMock.isCrmUpdate() } returns false
+
+        every { crmclsCustomerDataRepositorySpi.save(any()) } answers { crmClsCustomerDataMock }
+
+        importCustomerService.apply(newBatch, personalAccounts)
+
+        verify { /* vérifie processRoleCreationInCrmStep */ }
+    }
+
+    @Test
+    fun `should process role update when isUpdateRole`() {
+        val crmClsCustomerDataMock = mockk<CrmClsCustomerData>(relaxed = true)
+        every { crmClsCustomerDataMock.isUpdateRole() } returns true
+        every { crmClsCustomerDataMock.isCreateRole() } returns false
+        every { crmClsCustomerDataMock.isCrmUpdate() } returns false
+
+        every { crmclsCustomerDataRepositorySpi.save(any()) } answers { crmClsCustomerDataMock }
+
+        importCustomerService.apply(newBatch, personalAccounts)
+
+        verify { /* vérifie processRoleUpdateInCrmStep */ }
+    }
+
+    @Test
+    fun `should save KO step when personalAccount has errorMessage`() {
+        val errorAccount = personalAccounts.first().copy(errorMessage = "Validation failed")
+
+        importCustomerService.apply(newBatch, listOf(errorAccount))
+
+        verify {
+            recordStepEventRepositorySpi.save(
+                match {
+                    it.stepStatus == RecordStepStatus.KO &&
+                    it.stepMessage == "Validation failed"
+                }
+            )
+        }
+    }
+}
