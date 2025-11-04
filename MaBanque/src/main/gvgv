@@ -1,0 +1,62 @@
+class ImportCustomersServiceTest {
+
+    // --- Dependencies (mockées)
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk(relaxed = true)
+    private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk(relaxed = true)
+    private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk(relaxed = true)
+    private val clockProvider: ClockProvider = mockk { every { now() } returns Instant.MIN }
+    private val referenceIdFactory: ReferenceIdFactory = mockk {
+        every { generate() } returnsMany IntStream.range(1, 5).mapToObj {
+            ReferenceId(value = it.toString().repeat(10))
+        }.toList()
+    }
+
+    // --- Données communes
+    private val batchReference = ReferenceId(value = "BATCH001")
+    private val countryCodeFR = CountryCode(countryCode = "FR")
+    private val personalAccounts = IntStream.range(0, 2).mapToObj {
+        CustomerPayLoad(
+            rowNumber = it + 1,
+            crmbata = CrmData(
+                salutation = "Mr.",
+                title = "Dr.",
+                firstName = "First$it",
+                surname = "Last$it",
+                gender = "Male",
+                mainCountry = "FR",
+                contactRole = "Customer"
+            ),
+            clsdata = emptyMap(),
+            errorMessage = null
+        )
+    }.toList()
+
+    private val newBatch = LoaderBatch(
+        id = "BATCH_1",
+        reference = batchReference,
+        fileName = "customers.csv",
+        triggeredBy = "user1",
+        countryCode = countryCodeFR,
+        status = LoaderBatchStatus.RUNNING,
+        type = LoaderBatchType.CONTACTS,
+        startDate = Instant.MIN,
+        endDate = Instant.MIN,
+        totalContacts = personalAccounts.size
+    )
+
+    // --- Service à tester
+    private lateinit var importCustomerService: ImportCustomersService
+
+    @BeforeEach
+    fun setup() {
+        importCustomerService = ImportCustomersService(
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            clockProvider = clockProvider,
+            referenceldFactory = referenceIdFactory,
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            crustomerProviderSpi = crmCustomerProviderSpi,
+            batchRepositorySpi = batchRepositorySpi
+        )
+    }
+}
