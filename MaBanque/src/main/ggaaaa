@@ -1,0 +1,56 @@
+@Test
+fun `it should process role creation correctly`() {
+    // GIVEN
+    val crmRoleResponsePayload = CrmRoleResponsePayload(
+        crmRoleId = "ROLE123",
+        crmStatus = RecordStepStatus.OK,
+        getMessage = "Role created"
+    )
+
+    val crmClsCustomerData = CrmClsCustomerData(
+        batchId = batch.id!!,
+        reconciliationId = ReconciliationId(batchReference = batch.reference, rowReference = ReferenceId("ROW0010001")),
+        rowNumber = 1,
+        rowReference = ReferenceId("ROW0010001"),
+        crmData = CrmData(
+            firstName = "Antoine",
+            surname = "Dupont",
+            contactRole = "prospect",
+            mainCountry = batch.countryCode.countryCode
+        ),
+        clsData = emptyMap(),
+        id = "CUST001",
+        crmInsertedId = "ACC123"
+    )
+
+    // Mocks
+    every { crmCustomerProviderSpi.createCrmRole(any()) } returns crmRoleResponsePayload
+    val savedCustomers = mutableListOf<CrmClsCustomerData>()
+    every { crmClsCustomerDataRepositorySpi.save(capture(savedCustomers)) } answers { firstArg() }
+    val savedEvents = mutableListOf<RecordStepEvent>()
+    every { recordStepEventRepositorySpi.save(capture(savedEvents)) } answers { firstArg() }
+
+    // WHEN
+    importCustomerService.apply(batch, listOf(
+        CustomerPayload(
+            rowNumber = crmClsCustomerData.rowNumber,
+            crmData = crmClsCustomerData.crmData,
+            clsData = crmClsCustomerData.clsData
+        )
+    ))
+
+    // THEN
+    assertEquals(1, savedCustomers.size)
+    val savedCustomer = savedCustomers[0]
+    assertEquals("ROLE123", savedCustomer.crmInsertedId)
+    assertEquals(batch.id, savedCustomer.batchId)
+    assertEquals(crmClsCustomerData.rowNumber, savedCustomer.rowNumber)
+
+    assertEquals(1, savedEvents.size)
+    val savedEvent = savedEvents[0]
+    assertEquals(SF_CREATE_ROLE, savedEvent.stepName)
+    assertEquals(RecordStepStatus.OK, savedEvent.stepStatus)
+    assertEquals("Role created", savedEvent.stepMessage)
+    assertEquals(batch.id, savedEvent.batchId)
+    assertEquals(crmClsCustomerData.rowNumber, savedEvent.rowNumber)
+}
