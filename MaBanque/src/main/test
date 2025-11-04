@@ -1,0 +1,134 @@
+@ExtendWith(MockKExtension::class)
+class ImportCustomersServiceTest {
+
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk(relaxed = true)
+    private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk(relaxed = true)
+    private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk(relaxed = true)
+    private val logger: Logger = mockk(relaxed = true)
+
+    private lateinit var importCustomerService: ImportCustomersService
+
+    private val batchReference = ReferenceId(value = "BATREF0010")
+    private val countryCodeFR = CountryCode(countryCode = "FR")
+
+    private val newBatch = LoaderBatch(
+        id = "BATCH_1",
+        reference = batchReference,
+        fileName = "customers.csv",
+        triggeredBy = "user1",
+        countryCode = countryCodeFR,
+        status = LoaderBatchStatus.RUNNING,
+        startDate = Instant.now(),
+        endDate = Instant.now(),
+        totalContacts = 2,
+        type = LoaderBatchType.CONTACTS
+    )
+
+    private val personalAccountsToCreate = IntStream.range(0, 2).mapToObj {
+        CustomerPayload(
+            rowNumber = it,
+            errorMessage = "no error", // ✅ important pour ne pas déclencher le throw
+            crmData = CrmData(
+                salesforceRoleId = null,
+                salesforceCustomerId = null,
+                salutation = "Mr.",
+                title = "Mr.",
+                languageCode = "French",
+                sex = "Male",
+                homeCountry = "FRANCE",
+                workCountry = "FRANCE",
+                homeProvince = "Île-de-France",
+                workProvince = "Île-de-France"
+            ),
+            clsData = mapOf()
+        )
+    }.toList()
+
+    @BeforeEach
+    fun setup() {
+        importCustomerService = spyk(
+            ImportCustomersService(
+                recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+                crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+                crmCustomerProviderSpi = crmCustomerProviderSpi,
+                batchRepositorySpi = batchRepositorySpi
+            ),
+            recordPrivateCalls = true
+        )
+    }
+
+    // -----------------------------
+    // ✅ TEST 1 : Cas succès complet
+    // -----------------------------
+    @Test
+    fun `apply should process all customers successfully`() {
+        // Given
+        val crmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true)
+        val savedCrmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true)
+
+        every { importCustomerService invoke "createCrmClsCustomerData" withArguments any<List<*>>() } returns crmClsCustomerData
+        every { importCustomerService invoke "processCustomerSavingInBlmStep" withArguments listOf(crmClsCustomerData) } returns savedCrmClsCustomerData
+
+        every { savedCrmClsCustomerData.isCreateRole() } returns false
+        every { savedCrmClsCustomerData.isUpdateRole() } returns false
+        every { savedCrmClsCustomerData.isCrmUpdate() } returns false
+
+        justRun { importCustomerService invoke "processCustomerCreationInCrmStep" withArguments listOf(savedCrmClsCustomerData) }
+        justRun { recordStepEventRepositorySpi.save(any()) }
+
+        // When
+        importCustomerService.apply(newBatch, personalAccountsToCreate)
+
+        // Then
+        verify(exactly = personalAccountsToCreate.size) {
+            recordStepEventRepositorySpi.save(
+                match {
+                    it.batchId == newBatch.id &&
+                    it.stepStatus == RecordStepStatus.OK &&
+                    it.stepName == "BLM"
+                }
+            )
+        }
+    }
+
+    // -----------------------------
+    // ❌ TEST 2 : Cas KO (exception)
+    // -----------------------------
+    @Test
+    fun `apply should handle exception when errorMessage is null`() {
+        // Given
+        val personalAccountsWithError = listOf(
+            CustomerPayload(
+                rowNumber = 1,
+                errorMessage = null, // ❌ va déclencher le throw Exception
+                crmData = CrmData(
+                    salesforceRoleId = null,
+                    salesforceCustomerId = null,
+                    homeCountry = "FRANCE",
+                    workCountry = "FRANCE"
+                ),
+                clsData = mapOf()
+            )
+        )
+
+        justRun { recordStepEventRepositorySpi.save(any()) }
+        justRun { batchRepositorySpi.save(any()) }
+
+        // When
+        importCustomerService.apply(newBatch, personalAccountsWithError)
+
+        // Then
+        verify {
+            recordStepEventRepositorySpi.save(
+                match {
+                    it.batchId == newBatch.id &&
+                    it.stepStatus == RecordStepStatus.KO &&
+                    it.stepName == "BLM" &&
+                    it.stepMessage?.contains("errorMessage") == true
+                }
+            )
+        }
+        verify { batchRepositorySpi.save(any()) }
+    }
+}
