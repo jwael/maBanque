@@ -1,0 +1,134 @@
+import io.mockk.*
+import org.junit.jupiter.api.*
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.Instant
+import java.util.stream.IntStream
+
+@DisplayName("ImportCustomerService.apply() tests")
+class ImportCustomerServiceTest {
+
+    private val referenceIdFactory: ReferenceIdFactory = mockk()
+    private val clockProvider: ClockProvider = mockk()
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk(relaxed = true)
+    private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk(relaxed = true)
+    private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk(relaxed = true)
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+
+    private lateinit var importCustomerService: ImportCustomerService
+
+    private val batchReference = ReferenceId(value = "BATREF0010")
+    private val countryCodeFR = CountryCode("FR")
+
+    private val newBatch = LoaderBatch(
+        id = "BATCH_1",
+        reference = batchReference,
+        fileName = "customers.csv",
+        triggeredBy = "user1",
+        countryCode = countryCodeFR,
+        status = LoaderBatchStatus.RUNNING,
+        startDate = Instant.MIN,
+        endDate = Instant.MIN,
+        totalContacts = 5,
+        type = LoaderBatchType.CONTACTS
+    )
+
+    @BeforeEach
+    fun setup() {
+        every { clockProvider.now() } returns Instant.parse("2025-11-01T00:00:00Z")
+        every { referenceIdFactory.generate() } returnsMany IntStream.range(1, 10)
+            .mapToObj { ReferenceId(it.toString().repeat(10)) }
+            .toList()
+
+        importCustomerService = ImportCustomerService(
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi = crmCustomerProviderSpi,
+            batchRepositorySpi = batchRepositorySpi,
+            clockProvider = clockProvider,
+            referenceIdFactory = referenceIdFactory
+        )
+    }
+
+    @Nested
+    @DisplayName("When customer has valid data")
+    inner class ValidCustomerScenarios {
+
+        @ParameterizedTest(name = "should produce {1} when contactRole={0}")
+        @CsvSource(
+            "prospect,SF_CREATE",
+            "update,SF_UPDATE",
+            "role_create,SF_ROLE_CREATE",
+            "role_update,SF_ROLE_UPDATE"
+        )
+        fun `apply should create OK record step for each valid scenario`(
+            contactRole: String,
+            expectedStepName: String
+        ) {
+            val payload = CustomerPayload(
+                rowNumber = 1,
+                crmData = CrmData(
+                    firstName = "John",
+                    surname = "Doe",
+                    contactRole = contactRole,
+                    mainCountry = "FR"
+                ),
+                clsData = emptyMap(),
+                errorMessage = null
+            )
+
+            // When
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            // Then
+            verify {
+                crmClsCustomerDataRepositorySpi.save(any())
+            }
+
+            verify {
+                recordStepEventRepositorySpi.save(
+                    match {
+                        it.batchId == "BATCH_1" &&
+                        it.rowNumber == 1 &&
+                        it.stepName == expectedStepName &&
+                        it.stepStatus == RecordStepStatus.OK
+                    }
+                )
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("When customer has error message")
+    inner class ErrorScenario {
+
+        @Test
+        fun `apply should save KO step when errorMessage is not blank`() {
+            val errorPayload = CustomerPayload(
+                rowNumber = 99,
+                crmData = CrmData(
+                    firstName = "Error",
+                    surname = "User",
+                    contactRole = "prospect",
+                    mainCountry = "FR"
+                ),
+                clsData = emptyMap(),
+                errorMessage = "CRM validation failed"
+            )
+
+            // When
+            importCustomerService.apply(newBatch, listOf(errorPayload))
+
+            // Then
+            verify {
+                recordStepEventRepositorySpi.save(
+                    match {
+                        it.stepStatus == RecordStepStatus.KO &&
+                        it.stepName == "BLM" &&
+                        it.stepMessage == "CRM validation failed"
+                    }
+                )
+            }
+        }
+    }
+}
