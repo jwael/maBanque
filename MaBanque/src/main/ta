@@ -1,0 +1,52 @@
+// 1️⃣ Mapper les valeurs métiers aux enums
+fun mapToRecordStepStatus(status: String): RecordStepStatus = when(status.uppercase()) {
+    "CLIENT", "PROSPECT" -> RecordStepStatus.OK
+    "KO" -> RecordStepStatus.KO
+    else -> RecordStepStatus.PENDING
+}
+
+// 2️⃣ Exemple de test pour processCustomerCreationInCrmStep
+@ParameterizedTest
+@CsvSource(
+    "Client, ACC123",
+    "Prospect, ACC456"
+)
+fun `it should process customer creation in CRM step`(expectedStatus: String, crmAccountId: String) {
+    // GIVEN - payload CRM
+    val crmClsCustomerData = CrmClsCustomerData(
+        batchId = batch.id!!,
+        reconciliationId = ReconciliationId(batchReference = batch.reference, rowReference = ReferenceId("ROW001")),
+        rowNumber = 1,
+        rowReference = ReferenceId("ROW001"),
+        crmData = CrmData(firstName = "John", surname = "Doe", mainCountry = "FRANCE", contactRole = "Client"),
+        clsData = emptyMap(),
+        id = "CUST001",
+        crmInsertedId = null
+    )
+
+    val crmResponsePayload = CrmCustomerResponsePayload(
+        crmAccountId = crmAccountId,
+        crmStatus = mapToRecordStepStatus(expectedStatus),
+        crmMessage = "Created",
+        crmRoleId = null
+    )
+
+    // Mock du provider SPI
+    every { crmCustomerProviderSpi.createCrmCustomer(crmClsCustomerData) } returns crmResponsePayload
+    every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+    every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+
+    // WHEN
+    importCustomerService.apply(batch, listOf(CustomerPayLoad(
+        rowNumber = crmClsCustomerData.rowNumber,
+        crmData = crmClsCustomerData.crmData,
+        clsData = crmClsCustomerData.clsData
+    )))
+
+    // THEN
+    verify { crmCustomerProviderSpi.createCrmCustomer(any()) }
+    verify { crmClsCustomerDataRepositorySpi.save(any()) }
+    verify { recordStepEventRepositorySpi.save(match {
+        it.stepStatus == mapToRecordStepStatus(expectedStatus)
+    }) }
+}
