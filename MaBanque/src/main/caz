@@ -1,0 +1,79 @@
+@Test
+fun `it should process customer update correctly`() {
+    // GIVEN
+    val crmCustomerResponsePayload = CrmCustomerResponsePayload(
+        crmAccountId = "ACC123",
+        crmStatus = RecordStepStatus.OK,
+        crmMessage = "Customer updated",
+        crmRoleId = null
+    )
+
+    val crmClsCustomerDataList = listOf(
+        CrmClsCustomerData(
+            batchId = batch.id!!,
+            reconciliationId = ReconciliationId(
+                batchReference = batch.reference,
+                rowReference = ReferenceId("ROW0010001")
+            ),
+            rowNumber = 1,
+            rowReference = ReferenceId("ROW0010001"),
+            crmData = CrmData(
+                firstName = "Antoine",
+                surname = "Dupont",
+                contactRole = "prospect",
+                mainCountry = batch.countryCode.countryCode // <- correct
+            ),
+            clsData = emptyMap(),
+            id = "CUST001",
+            crmInsertedId = null
+        ),
+        CrmClsCustomerData(
+            batchId = batch.id!!,
+            reconciliationId = ReconciliationId(
+                batchReference = batch.reference,
+                rowReference = ReferenceId("ROW0010002")
+            ),
+            rowNumber = 2,
+            rowReference = ReferenceId("ROW0010002"),
+            crmData = CrmData(
+                firstName = "Marie",
+                surname = "Lepen",
+                contactRole = "prospect",
+                mainCountry = batch.countryCode.countryCode
+            ),
+            clsData = emptyMap(),
+            id = "CUST002",
+            crmInsertedId = null
+        )
+    )
+
+    // Mocks
+    every { crmCustomerProviderSpi.updateCrmCustomer(any()) } returns crmCustomerResponsePayload
+    val savedCustomers = mutableListOf<CrmClsCustomerData>()
+    every { crmClsCustomerDataRepositorySpi.save(capture(savedCustomers)) } answers { firstArg() }
+    val savedEvents = mutableListOf<RecordStepEvent>()
+    every { recordStepEventRepositorySpi.save(capture(savedEvents)) } answers { firstArg() }
+
+    // WHEN
+    importCustomerService.apply(
+        batch,
+        crmClsCustomerDataList.map { CustomerPayload(it.rowNumber, it.crmData, it.clsData) }
+    )
+
+    // THEN
+    assertEquals(2, savedCustomers.size)
+    savedCustomers.forEachIndexed { index, saved ->
+        assertEquals("ACC123", saved.crmInsertedId)
+        assertEquals(batch.id, saved.batchId)
+        assertEquals(crmClsCustomerDataList[index].rowNumber, saved.rowNumber)
+    }
+
+    assertEquals(2, savedEvents.size)
+    savedEvents.forEachIndexed { index, event ->
+        assertEquals(SF_UPDATE, event.stepName)
+        assertEquals(RecordStepStatus.OK, event.stepStatus)
+        assertEquals("Customer updated", event.stepMessage)
+        assertEquals(batch.id, event.batchId)
+        assertEquals(crmClsCustomerDataList[index].rowNumber, event.rowNumber)
+    }
+}
