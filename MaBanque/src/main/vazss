@@ -1,0 +1,48 @@
+@Test
+fun `it should process all customers correctly`() {
+    val batch = LoaderBatch(
+        id = "BATCH_1",
+        reference = ReferenceId("REF0001"),
+        // ... autres champs nécessaires
+    )
+
+    // Liste des scénarios à tester
+    val scenarios = listOf(
+        mapOf(
+            "country" to CountryCode("FR"),
+            "firstName" to "Antoine",
+            "surname" to "Dupont",
+            "contactRole" to "Client"
+        ),
+        mapOf(
+            "country" to CountryCode("IT"),
+            "firstName" to "Marco",
+            "surname" to "Rossi",
+            "contactRole" to "Prospect"
+        )
+    )
+
+    scenarios.forEach { scenario ->
+        val crmClsCustomerData = CrmClsCustomerData(
+            batchId = batch.id!!,
+            reconciliationId = ReconciliationId(batchReference = batch.reference, rowReference = ReferenceId("ROW001")),
+            rowNumber = 1,
+            rowReference = ReferenceId("ROW001"),
+            crmData = CrmData(
+                mainCountry = scenario["country"] as CountryCode,
+                firstName = scenario["firstName"] as String,
+                surname = scenario["surname"] as String,
+                contactRole = scenario["contactRole"] as String
+            ),
+            clsData = emptyMap(),
+            id = "CUST001",
+            crmInsertedId = null
+        )
+
+        importCustomerService.apply(batch, listOf(CustomerPayload.from(crmClsCustomerData)))
+
+        verify { crmClsCustomerDataRepositorySpi.save(any()) }
+        verify { crmCustomerProviderSpi.createCrmCustomer(any()) }
+        verify { batchRepositorySpi.save(match { it.status == LoaderBatchStatus.IMPORTED }) }
+    }
+}
