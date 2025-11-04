@@ -1,0 +1,113 @@
+import io.mockk.*
+import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import kotlin.test.assertEquals
+
+class ImportCustomerServiceTest {
+
+    // --- Dépendances mockées
+    private val recordStepEventRepositorySpi = mockk<RecordStepEventRepositorySpi>(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi = mockk<CrmClsCustomerDataRepositorySpi>(relaxed = true)
+    private val crmCustomerProviderSpi = mockk<CrmCustomerProviderSpi>(relaxed = true)
+    private val batchRepositorySpi = mockk<BatchRepositoryForContactsSpi>(relaxed = true)
+    private val clockProvider = mockk<ClockProvider>()
+
+    // --- Service à tester
+    private lateinit var importCustomerService: ImportCustomersService
+
+    // --- Données communes
+    private lateinit var newBatch: LoaderBatch
+    private lateinit var personalAccounts: List<CustomerPayload>
+
+    @BeforeEach
+    fun setUp() {
+        importCustomerService = ImportCustomersService(
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi = crmCustomerProviderSpi,
+            batchRepositorySpi = batchRepositorySpi,
+            logger = mockk(relaxed = true)
+        )
+
+        every { clockProvider.now() } returns Instant.parse("2025-10-14T00:00:00Z")
+
+        newBatch = LoaderBatch(
+            id = "BATCH_001",
+            reference = "BATCH_REF",
+            fileName = "file.csv",
+            triggeredBy = "user-001",
+            countryCode = "FR",
+            status = LoaderBatchStatus.RUNNING,
+            startDate = Instant.MIN,
+            endDate = Instant.MIN,
+            totalContacts = 2,
+            type = LoaderBatchType.CONTACTS
+        )
+
+        personalAccounts = IntRange(1, 2).map { i ->
+            CustomerPayload(
+                rowNumber = i,
+                errorMessage = null,
+                crmData = mapOf(
+                    "firstName" to "Test$i",
+                    "surname" to "User$i",
+                    "homeCountry" to "FR",
+                    "workCountry" to "FR"
+                )
+            )
+        }
+    }
+
+    @Nested
+    inner class ApplyTests {
+
+        @Test
+        fun `apply should process personal accounts successfully`() = runBlocking {
+            // When
+            importCustomerService.apply(newBatch, personalAccounts)
+
+            // Then: vérifier que les données ont été sauvegardées
+            verify(atLeast = 1) { crmClsCustomerDataRepositorySpi.save(any()) }
+
+            // Vérifier que des events BLM / SF ont été créés
+            val slot = mutableListOf<RecordStepEvent>()
+            verify { recordStepEventRepositorySpi.save(capture(slot)) }
+
+            // Tous les events doivent avoir un stepStatus OK et stepName connu
+            slot.forEach { event ->
+                assertEquals(RecordStepStatus.OK, event.stepStatus)
+                assert(event.stepName in listOf("BLM", "SF_CREATE", "SF_UPDATE", "SF_ROLE_CREATE", "SF_ROLE_UPDATE"))
+            }
+
+            // Optionnel: vérifier qu'au moins un event BLM pour chaque rowNumber
+            personalAccounts.forEach { account ->
+                assert(slot.any { it.rowNumber == account.rowNumber && it.stepName == "BLM" })
+            }
+        }
+
+        @Test
+        fun `apply should save KO event when personal account has error`() = runBlocking {
+            val failingAccount = CustomerPayload(
+                rowNumber = 99,
+                errorMessage = "Invalid data",
+                crmData = emptyMap()
+            )
+
+            // When
+            importCustomerService.apply(newBatch, listOf(failingAccount))
+
+            // Then
+            val slot = mutableListOf<RecordStepEvent>()
+            verify { recordStepEventRepositorySpi.save(capture(slot)) }
+
+            val savedEvent = slot.first()
+            assertEquals(RecordStepStatus.KO, savedEvent.stepStatus)
+            assertEquals("BLM", savedEvent.stepName)
+            assertEquals("Invalid data", savedEvent.stepMessage)
+            assertEquals(99, savedEvent.rowNumber)
+        }
+    }
+}
