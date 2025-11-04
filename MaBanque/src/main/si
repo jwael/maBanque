@@ -1,0 +1,89 @@
+@Nested
+@DisplayName("ImportCustomerService apply() tests")
+inner class ApplyTests {
+
+    private val personalAccounts = listOf(
+        CustomerPayload(
+            rowNumber = 1,
+            errorMessage = null,
+            crmData = CrmData(
+                firstName = "Antoine",
+                surname = "Dupont",
+                contactRole = "prospect",
+                mainCountry = "FR"
+            ),
+            clsData = emptyMap()
+        ),
+        CustomerPayload(
+            rowNumber = 2,
+            errorMessage = "Validation error",
+            crmData = CrmData(
+                firstName = "Mario",
+                surname = "Rossi",
+                contactRole = "prospect",
+                mainCountry = "IT"
+            ),
+            clsData = emptyMap()
+        )
+    )
+
+    private val batch = LoaderBatch(
+        id = "BATCH_1",
+        reference = ReferenceId("BATREF0010"),
+        fileName = "customers.csv",
+        triggeredBy = "user1",
+        countryCode = CountryCode("FR"),
+        status = LoaderBatchStatus.RUNNING,
+        startDate = Instant.MIN,
+        endDate = Instant.MIN,
+        totalContacts = personalAccounts.size,
+        type = LoaderBatchType.CONTACTS
+    )
+
+    @BeforeEach
+    fun setupMocks() {
+        every { clockProvider.now() } returns Instant.parse("2025-10-14T00:00:00Z")
+        every { referenceIdFactory.generate() } returns ReferenceId("REF1234567")
+
+        // Simuler la sauvegarde et renvoyer l'objet passé
+        coEvery { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+        coEvery { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+
+        // Simuler la création d'un client CRM
+        coEvery { crmCustomerProviderSpi.createCrmCustomer(any()) } returns CrmCustomerResponsePayload(
+            crmAccountId = "ACC123",
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Customer created",
+            crmRoleId = null
+        )
+    }
+
+    @Test
+    @DisplayName("Should process personal accounts correctly")
+    fun `apply should process all personal accounts`() = runTest {
+        // WHEN
+        importCustomerService.apply(batch, personalAccounts)
+
+        // THEN
+        coVerify(exactly = 1) {
+            crmClsCustomerDataRepositorySpi.save(match { it.batchId == batch.id && it.crmData.firstName == "Antoine" })
+        }
+
+        coVerify(exactly = 1) {
+            recordStepEventRepositorySpi.save(match {
+                it.batchId == batch.id &&
+                it.rowNumber == 1 &&
+                it.stepStatus == RecordStepStatus.OK
+            })
+        }
+
+        coVerify(exactly = 1) {
+            recordStepEventRepositorySpi.save(match {
+                it.batchId == batch.id &&
+                it.rowNumber == 2 &&
+                it.stepStatus == RecordStepStatus.KO &&
+                it.stepMessage == "Elpersona LAccount errorlessage?"
+            })
+        }
+    }
+}
