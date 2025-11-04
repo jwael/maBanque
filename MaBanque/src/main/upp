@@ -1,0 +1,54 @@
+@Test
+fun `it should update customer correctly in CRM`() {
+    // GIVEN - un client à mettre à jour
+    val crmData = CrmData(
+        firstName = "Antoine",
+        surname = "Dupont",
+        contactRole = "prospect",
+        mainCountry = "FR"
+    )
+    val customerPayload = CustomerPayload(
+        rowNumber = 1,
+        crmData = crmData,
+        clsData = emptyMap()
+    )
+
+    val crmClsCustomerData = CrmClsCustomerData(
+        batchId = batch.id!!,
+        reconciliationId = ReconciliationId(batchReference = batch.reference, rowReference = ReferenceId("ROW0001")),
+        rowNumber = 1,
+        rowReference = ReferenceId("ROW0001"),
+        crmData = crmData,
+        clsData = emptyMap(),
+        id = "CUST001",
+        crmInsertedId = null
+    )
+
+    // WHEN - mock du fournisseur CRM
+    val crmResponse = CrmCustomerResponsePayload(
+        crmAccountId = "ACC123",
+        crmStatus = RecordStepStatus.OK,
+        crmMessage = "Customer updated",
+        crmRoleId = null
+    )
+    every { crmCustomerProviderSpi.updateCrmCustomer(any()) } returns crmResponse
+    every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+    every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+
+    // WHEN - on appelle apply pour déclencher la fonction privée
+    importCustomerService.apply(batch, listOf(customerPayload))
+
+    // THEN - vérifier que les appels ont été faits correctement
+    verify { crmCustomerProviderSpi.updateCrmCustomer(match { it.rowNumber == 1 }) }
+
+    val slot = slot<CrmClsCustomerData>()
+    verify { crmClsCustomerDataRepositorySpi.save(capture(slot)) }
+    assertEquals("ACC123", slot.captured.crmInsertedId)
+    assertEquals("Antoine", slot.captured.crmData.firstName)
+
+    val eventSlot = slot<RecordStepEvent>()
+    verify { recordStepEventRepositorySpi.save(capture(eventSlot)) }
+    assertEquals(SF_UPDATE, eventSlot.captured.stepName)
+    assertEquals(RecordStepStatus.OK, eventSlot.captured.stepStatus)
+    assertEquals("Customer updated", eventSlot.captured.stepMessage)
+}
