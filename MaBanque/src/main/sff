@@ -1,0 +1,73 @@
+@Test
+fun `apply should process all scenarios correctly`() {
+    // GIVEN: plusieurs comptes clients simulant différents cas
+    val personalAccounts = listOf(
+        CustomerPayload(
+            rowNumber = 1,
+            crmData = CrmData(firstName = "Antoine", surname = "Dupont", contactRole = "prospect", mainCountry = "FR"),
+            errorMessage = null
+        ),
+        CustomerPayload(
+            rowNumber = 2,
+            crmData = CrmData(firstName = "Luca", surname = "Rossi", contactRole = "prospect", mainCountry = "IT"),
+            errorMessage = null
+        ),
+        CustomerPayload(
+            rowNumber = 3,
+            crmData = CrmData(firstName = "Invalid", surname = "Country", contactRole = "prospect", mainCountry = "XX"),
+            errorMessage = "Invalid country"
+        )
+    )
+
+    // Mock pour créer CrmClsCustomerData
+    val crmClsDataList = personalAccounts.mapIndexed { index, personalAccount ->
+        CrmClsCustomerData(
+            batchId = batch.id!!,
+            reconciliationId = ReconciliationId(batchReference = batch.reference, rowReference = ReferenceId("ROW$index")),
+            rowNumber = personalAccount.rowNumber,
+            rowReference = ReferenceId("ROW$index"),
+            crmData = personalAccount.crmData,
+            clsData = emptyMap(),
+            id = "CUST$index",
+            crmInsertedId = null
+        )
+    }
+
+    // Mock des méthodes privées via every { ... } returns ... 
+    crmClsDataList.forEachIndexed { index, crmClsData ->
+        every { importCustomerService.createCrmClsCustomerData(batch, personalAccounts[index]) } returns crmClsData
+        every { importCustomerService.processCustomerSavingInBlmStep(crmClsData) } returns crmClsData.apply {
+            // On simule différents cas selon l'index
+            when (index) {
+                0 -> {} // SF_CREATE
+                1 -> {} // SF_UPDATE
+                2 -> {} // KO
+            }
+        }
+
+        // On simule les booléens pour le when dans apply()
+        every { crmClsData.isCreateRole() } returns (index == 0)
+        every { crmClsData.isUpdateRole() } returns (index == 1)
+        every { crmClsData.isCrmUpdate() } returns false
+    }
+
+    // Mock des opérations qui sauvegardent ou envoient des events
+    every { importCustomerService.processCustomerCreationInCrmStep(any()) } returns Unit
+    every { importCustomerService.processCustomerUpdateInCrmStep(any()) } returns Unit
+    every { importCustomerService.processRoleCreationInCrmStep(any()) } returns Unit
+    every { importCustomerService.processRoleUpdateInCrmStep(any()) } returns Unit
+    every { recordStepEventRepositorySpi.save(any()) } returns Unit
+    every { batchRepositorySpi.save(any()) } returns batch
+
+    // WHEN
+    importCustomerService.apply(batch, personalAccounts)
+
+    // THEN
+    // Vérifier que les bons traitements ont été appelés pour chaque cas
+    verify { importCustomerService.processRoleCreationInCrmStep(crmClsDataList[0]) }
+    verify { importCustomerService.processRoleUpdateInCrmStep(crmClsDataList[1]) }
+    verify { recordStepEventRepositorySpi.save(match { it.rowNumber == 3 && it.stepStatus == RecordStepStatus.KO }) }
+
+    // Vérifier que save sur le batch a été appelé
+    verify { batchRepositorySpi.save(batch) }
+}
