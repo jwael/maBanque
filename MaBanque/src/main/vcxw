@@ -1,0 +1,66 @@
+Cannot access fun processCustomerUpdatelnCrmStep(crmClsCustomerData: CrmCisCustomerData): Unit': it is private in com/arval/bim/cor application/service/ImportCustomersService'.
+
+@ParameterizedTest
+@CsvSource(
+    "Client1, Dupont, Client, FRANCE",
+    "Client2, Rossi, Prospect, ITALY"
+)
+fun `it should process customer update correctly`(
+    firstName: String,
+    surname: String,
+    contactRole: String,
+    country: String
+) {
+    // GIVEN - un batch
+    val batch = LoaderBatch(
+        id = "BATCH_1",
+        reference = ReferenceId("REF0001"),
+        fileName = "file.csv",
+        triggeredBy = "user1",
+        countryCode = CountryCode(countryCode = country),
+        status = LoaderBatchStatus.RUNNING,
+        type = LoaderBatchType.CONTACTS,
+        startDate = Instant.now(),
+        endDate = null,
+        totalContacts = 1
+    )
+
+    // GIVEN - des clients préparés pour déclencher un update
+    val crmClsCustomerDataList = listOf(
+        CrmClsCustomerData(
+            batchId = batch.id!!,
+            reconciliationId = ReconciliationId(batch.reference, ReferenceId("ROW001")),
+            rowNumber = 1,
+            rowReference = ReferenceId("ROW001"),
+            crmData = CrmData(firstName = firstName, surname = surname, contactRole = contactRole, mainCountry = country),
+            clsData = emptyMap(),
+            id = "CUST001",
+            crmInsertedId = "EXISTING_ID" // <--- important pour que le flux update soit déclenché
+        )
+    )
+
+    val customerPayloads = crmClsCustomerDataList.map {
+        CustomerPayload(rowNumber = it.rowNumber, crmData = it.crmData, clsData = it.clsData)
+    }
+
+    // MOCKS
+    every { crmCustomerProviderSpi.updateCrmCustomer(any()) } answers {
+        CrmCustomerResponsePayload(
+            crmAccountId = "UPDATED_ACC",
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Updated successfully"
+        )
+    }
+    every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+    every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+    every { clockProvider.now() } returns Instant.parse("2025-10-14T00:00:00Z")
+
+    // WHEN
+    importCustomerService.apply(batch, personalAccounts = customerPayloads)
+
+    // THEN - vérifications Teach Lead style
+    verify(exactly = 1) { crmCustomerProviderSpi.updateCrmCustomer(any()) }
+    verify(exactly = 1) { crmClsCustomerDataRepositorySpi.save(any()) }
+    verify(exactly = 1) { recordStepEventRepositorySpi.save(match { it.stepName == "SF_UPDATE" && it.stepStatus == RecordStepStatus.OK }) }
+    verify { batchRepositorySpi.save(match { it.status == LoaderBatchStatus.IMPORTED }) }
+}
