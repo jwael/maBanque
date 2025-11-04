@@ -1,0 +1,108 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.Instant
+import java.util.stream.IntStream
+
+class ImportCustomersServiceTest {
+
+    // --- Dépendances mockées
+    private val referenceIdFactory: ReferenceIdFactory = mockk()
+    private val clockProvider: ClockProvider = mockk()
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk(relaxed = true)
+    private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk(relaxed = true)
+    private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk(relaxed = true)
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+
+    private lateinit var importCustomerService: ImportCustomersService
+
+    private val batchReference = ReferenceId(value = "BATREF0010")
+    private val countryCodeFR = CountryCode(countryCode = "FR")
+
+    private val batch = LoaderBatch(
+        id = "BATCH_1",
+        reference = batchReference,
+        fileName = "customers.csv",
+        triggeredBy = "user1",
+        countryCode = countryCodeFR,
+        status = LoaderBatchStatus.RUNNING,
+        startDate = Instant.MIN,
+        endDate = Instant.MIN,
+        totalContacts = 2,
+        type = LoaderBatchType.CONTACTS
+    )
+
+    private val customersToImport = IntStream.range(0, 2).mapToObj {
+        CustomerPayload(
+            rowNumber = it + 1,
+            crmData = CrmData(
+                firstName = "Client$it",
+                surname = "Test$it",
+                contactRole = "Prospect",
+                mainCountry = "FRANCE"
+            ),
+            clsData = mapOf()
+        )
+    }.toList()
+
+    @BeforeEach
+    fun setup() {
+        every { clockProvider.now() } returns Instant.parse("2025-10-14T00:00:00Z")
+
+        every { referenceIdFactory.generate() } returnsMany IntStream.range(1, 5).mapToObj {
+            ReferenceId(value = it.toString().repeat(10))
+        }.toList()
+
+        every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+        every { crmCustomerProviderSpi.createCrmCustomer(any()) } returns CrmCustomerResponsePayload(
+            crmAccountId = "ACC123",
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Customer created",
+            crmRoleId = null
+        )
+        every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+        importCustomerService = ImportCustomersService(
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            clockProvider = clockProvider,
+            referenceIdFactory = referenceIdFactory,
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi = crmCustomerProviderSpi,
+            batchRepositorySpi = batchRepositorySpi
+        )
+    }
+
+    @Nested
+    inner class CustomerCases {
+
+        @ParameterizedTest
+        @CsvSource(
+            "Client, OK",
+            "Prospect, OK"
+        )
+        fun `it should process all customers correctly`(
+            role: String,
+            expectedStatus: String
+        ) {
+            // GIVEN
+            val crmResponse = CrmCustomerResponsePayload(
+                crmAccountId = "ACC123",
+                crmStatus = RecordStepStatus.valueOf(expectedStatus),
+                crmMessage = "CRM $expectedStatus",
+                crmRoleId = null
+            )
+
+            every { crmCustomerProviderSpi.createCrmCustomer(any()) } returns crmResponse
+
+            // WHEN
+            importCustomerService.apply(batch, personalAccounts = customersToImport)
+
+            // THEN
+            verify(exactly = customersToImport.size) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+            verify(exactly = customersToImport.size) { crmClsCustomerDataRepositorySpi.save(any()) }
+            verify(exactly = 1) { batchRepositorySpi.save(match { it.status == LoaderBatchStatus.IMPORTED }) }
+        }
+    }
+}
