@@ -1,0 +1,100 @@
+@Test
+fun `apply should process personal accounts without error message successfully`() {
+    // Given
+    val personalAccount = CustomerPayload(
+        rowNumber = 1,
+        errorMessage = null
+    )
+    val personalAccounts = listOf(personalAccount)
+
+    val crmClsCustomerData = CrmClsCustomerData()
+    val savedCrmClsCustomerData = CrmClsCustomerData() // configure pour CREATE
+
+    every { importCustomerService.createCrmClsCustomerData(batch, personalAccount) } returns crmClsCustomerData
+    every { importCustomerService.processCustomerSavingInBlmStep(crmClsCustomerData) } returns savedCrmClsCustomerData
+    every { importCustomerService.processCustomerCreationInCrmStep(savedCrmClsCustomerData) } returns Unit
+    every { recordStepEventRepositorySpi.save(any()) } returns Unit
+
+    // When
+    importCustomerService.apply(batch, personalAccounts)
+
+    // Then
+    verify { importCustomerService.processCustomerSavingInBlmStep(crmClsCustomerData) }
+    verify { importCustomerService.processCustomerCreationInCrmStep(savedCrmClsCustomerData) }
+    verify { 
+        recordStepEventRepositorySpi.save(
+            match { it.batchId == batch.id && it.rowNumber == personalAccount.rowNumber && it.stepName == "BLM" && it.stepStatus == RecordStepStatus.OK }
+        )
+    }
+}
+
+@Test
+fun `apply should handle exception and save KO step`() {
+    // Given
+    val personalAccount = CustomerPayload(
+        rowNumber = 1,
+        errorMessage = "Validation error"
+    )
+    val personalAccounts = listOf(personalAccount)
+
+    // When
+    importCustomerService.apply(batch, personalAccounts)
+
+    // Then
+    verify { 
+        recordStepEventRepositorySpi.save(
+            match { it.batchId == batch.id && it.rowNumber == personalAccount.rowNumber && it.stepStatus == RecordStepStatus.KO && it.stepMessage == "Validation error" }
+        )
+    }
+}
+
+@Test
+fun `apply should process role creation when saved data is create role`() {
+    val personalAccount = CustomerPayload(rowNumber = 1, errorMessage = null)
+    val personalAccounts = listOf(personalAccount)
+    val crmClsCustomerData = CrmClsCustomerData()
+    val savedCrmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true)
+
+    every { importCustomerService.createCrmClsCustomerData(batch, personalAccount) } returns crmClsCustomerData
+    every { importCustomerService.processCustomerSavingInBlmStep(crmClsCustomerData) } returns savedCrmClsCustomerData
+    every { savedCrmClsCustomerData.isCreateRole() } returns true
+    every { importCustomerService.processRoleCreationInCrmStep(savedCrmClsCustomerData) } returns Unit
+
+    importCustomerService.apply(batch, personalAccounts)
+
+    verify { importCustomerService.processRoleCreationInCrmStep(savedCrmClsCustomerData) }
+}
+
+@Test
+fun `apply should process role update when saved data is update role`() {
+    val personalAccount = CustomerPayload(rowNumber = 1, errorMessage = null)
+    val personalAccounts = listOf(personalAccount)
+    val crmClsCustomerData = CrmClsCustomerData()
+    val savedCrmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true)
+
+    every { importCustomerService.createCrmClsCustomerData(batch, personalAccount) } returns crmClsCustomerData
+    every { importCustomerService.processCustomerSavingInBlmStep(crmClsCustomerData) } returns savedCrmClsCustomerData
+    every { savedCrmClsCustomerData.isUpdateRole() } returns true
+    every { importCustomerService.processRoleUpdateInCrmStep(savedCrmClsCustomerData) } returns Unit
+
+    importCustomerService.apply(batch, personalAccounts)
+
+    verify { importCustomerService.processRoleUpdateInCrmStep(savedCrmClsCustomerData) }
+}
+
+@Test
+fun `apply should process CRM update when saved data is crm update`() {
+    val personalAccount = CustomerPayload(rowNumber = 1, errorMessage = null)
+    val personalAccounts = listOf(personalAccount)
+    val crmClsCustomerData = CrmClsCustomerData()
+    val savedCrmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true)
+
+    every { importCustomerService.createCrmClsCustomerData(batch, personalAccount) } returns crmClsCustomerData
+    every { importCustomerService.processCustomerSavingInBlmStep(crmClsCustomerData) } returns savedCrmClsCustomerData
+    every { savedCrmClsCustomerData.isCrmUpdate() } returns true
+    every { importCustomerService.processCustomerUpdateInCrmStep(savedCrmClsCustomerData) } returns Unit
+
+    importCustomerService.apply(batch, personalAccounts)
+
+    verify { importCustomerService.processCustomerUpdateInCrmStep(savedCrmClsCustomerData) }
+}
