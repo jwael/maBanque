@@ -1,0 +1,203 @@
+@Test
+fun `apply should process personal accounts without error message successfully`() {
+    // Given
+    val personalAccount = CustomerPayload(
+        rowNumber = 1,
+        errorMessage = null // Pas d'erreur
+    )
+    val personalAccounts = listOf(personalAccount)
+    
+    val crmClsCustomerData = CrmClsCustomerData(
+        // vos propriétés ici
+    )
+    
+    val savedCrmClsCustomerData = CrmClsCustomerData(
+        // configurer pour un cas spécifique, par exemple CREATE
+    )
+    
+    every { 
+        createCrmClsCustomerData(
+            LoaderBatch = batch,
+            personalAccount = personalAccount
+        ) 
+    } returns crmClsCustomerData
+    
+    every { 
+        processCustomerSavingInBlmStep(crmClsCustomerData = crmClsCustomerData) 
+    } returns savedCrmClsCustomerData
+    
+    every { 
+        processCustomerCreationInCrmStep(crmClsCustomerData = savedCrmClsCustomerData) 
+    } returns Unit
+    
+    every { 
+        recordStepEventRepositorySpi.save(any()) 
+    } returns Unit
+    
+    // When
+    importCustomerService.apply(batch, personalAccounts)
+    
+    // Then
+    verify { 
+        processCustomerSavingInBlmStep(crmClsCustomerData = crmClsCustomerData) 
+    }
+    
+    verify { 
+        processCustomerCreationInCrmStep(crmClsCustomerData = savedCrmClsCustomerData) 
+    }
+    
+    verify { 
+        recordStepEventRepositorySpi.save(
+            match {
+                it.batchId == batch.id &&
+                it.rowNumber == personalAccount.rowNumber &&
+                it.stepName == "BLM" &&
+                it.stepStatus == RecordStepStatus.OK
+            }
+        ) 
+    }
+}
+
+@Test
+fun `apply should throw exception when personal account has error message`() {
+    // Given
+    val errorMessage = "Validation error"
+    val personalAccount = CustomerPayload(
+        rowNumber = 1,
+        errorMessage = errorMessage
+    )
+    val personalAccounts = listOf(personalAccount)
+    
+    // When & Then
+    assertThrows<Exception> {
+        importCustomerService.apply(batch, personalAccounts)
+    }
+    
+    verify(exactly = 0) { 
+        processCustomerSavingInBlmStep(any()) 
+    }
+    
+    verify { 
+        recordStepEventRepositorySpi.save(
+            match {
+                it.batchId == batch.id &&
+                it.rowNumber == personalAccount.rowNumber &&
+                it.stepName == "BLM" &&
+                it.stepStatus == RecordStepStatus.KO &&
+                it.stepMessage == errorMessage
+            }
+        ) 
+    }
+}
+
+@Test
+fun `apply should process role creation when saved data is create role`() {
+    // Given
+    val personalAccount = CustomerPayload(
+        rowNumber = 1,
+        errorMessage = null
+    )
+    val personalAccounts = listOf(personalAccount)
+    
+    val crmClsCustomerData = CrmClsCustomerData()
+    val savedCrmClsCustomerData = CrmClsCustomerData().apply {
+        // Configurer pour retourner true pour isCreateRole()
+    }
+    
+    every { createCrmClsCustomerData(any(), any()) } returns crmClsCustomerData
+    every { processCustomerSavingInBlmStep(any()) } returns savedCrmClsCustomerData
+    every { savedCrmClsCustomerData.isCreateRole() } returns true
+    every { processRoleCreationInCrmStep(any()) } returns Unit
+    every { recordStepEventRepositorySpi.save(any()) } returns Unit
+    
+    // When
+    importCustomerService.apply(batch, personalAccounts)
+    
+    // Then
+    verify { processRoleCreationInCrmStep(savedCrmClsCustomerData) }
+    verify(exactly = 0) { processCustomerCreationInCrmStep(any()) }
+}
+
+@Test
+fun `apply should process role update when saved data is update role`() {
+    // Given
+    val personalAccount = CustomerPayload(
+        rowNumber = 1,
+        errorMessage = null
+    )
+    val personalAccounts = listOf(personalAccount)
+    
+    val crmClsCustomerData = CrmClsCustomerData()
+    val savedCrmClsCustomerData = CrmClsCustomerData().apply {
+        // Configurer pour retourner true pour isUpdateRole()
+    }
+    
+    every { createCrmClsCustomerData(any(), any()) } returns crmClsCustomerData
+    every { processCustomerSavingInBlmStep(any()) } returns savedCrmClsCustomerData
+    every { savedCrmClsCustomerData.isUpdateRole() } returns true
+    every { processRoleUpdateInCrmStep(any()) } returns Unit
+    every { recordStepEventRepositorySpi.save(any()) } returns Unit
+    
+    // When
+    importCustomerService.apply(batch, personalAccounts)
+    
+    // Then
+    verify { processRoleUpdateInCrmStep(savedCrmClsCustomerData) }
+}
+
+@Test
+fun `apply should process customer update when saved data is crm update`() {
+    // Given
+    val personalAccount = CustomerPayload(
+        rowNumber = 1,
+        errorMessage = null
+    )
+    val personalAccounts = listOf(personalAccount)
+    
+    val crmClsCustomerData = CrmClsCustomerData()
+    val savedCrmClsCustomerData = CrmClsCustomerData().apply {
+        // Configurer pour retourner true pour isCrmUpdate()
+    }
+    
+    every { createCrmClsCustomerData(any(), any()) } returns crmClsCustomerData
+    every { processCustomerSavingInBlmStep(any()) } returns savedCrmClsCustomerData
+    every { savedCrmClsCustomerData.isCrmUpdate() } returns true
+    every { processCustomerUpdateInCrmStep(any()) } returns Unit
+    every { recordStepEventRepositorySpi.save(any()) } returns Unit
+    
+    // When
+    importCustomerService.apply(batch, personalAccounts)
+    
+    // Then
+    verify { processCustomerUpdateInCrmStep(savedCrmClsCustomerData) }
+}
+
+@Test
+fun `apply should handle exception during processing and save KO status`() {
+    // Given
+    val personalAccount = CustomerPayload(
+        rowNumber = 1,
+        errorMessage = null
+    )
+    val personalAccounts = listOf(personalAccount)
+    val exceptionMessage = "Processing failed"
+    
+    every { createCrmClsCustomerData(any(), any()) } throws Exception(exceptionMessage)
+    every { recordStepEventRepositorySpi.save(any()) } returns Unit
+    every { batchRepositorySpi.save(any()) } returns batch
+    
+    // When
+    importCustomerService.apply(batch, personalAccounts)
+    
+    // Then
+    verify { 
+        recordStepEventRepositorySpi.save(
+            match {
+                it.stepStatus == RecordStepStatus.KO &&
+                it.stepMessage == exceptionMessage
+            }
+        ) 
+    }
+    
+    verify { batchRepositorySpi.save(any()) }
+}
