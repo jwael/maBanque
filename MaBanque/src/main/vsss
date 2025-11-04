@@ -1,0 +1,84 @@
+@Nested
+inner class ProcessCustomerUpdateTests {
+
+    private lateinit var importCustomerService: ImportCustomersService
+
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk(relaxed = true)
+    private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk()
+    private val clockProvider: ClockProvider = mockk()
+
+    private val batch = LoaderBatch(
+        id = "BATCH_1",
+        reference = ReferenceId("REF001"),
+        fileName = "file.csv",
+        triggeredBy = "user1",
+        countryCode = CountryCode("FR"),
+        status = LoaderBatchStatus.RUNNING,
+        type = LoaderBatchType.CUSTOMER,
+        startDate = Instant.MIN,
+        endDate = null,
+        totalContacts = 1
+    )
+
+    @BeforeEach
+    fun setup() {
+        every { clockProvider.now() } returns Instant.parse("2025-10-14T00:00:00Z")
+        every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+
+        importCustomerService = ImportCustomersService(
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            clockProvider = clockProvider,
+            referenceIdFactory = mockk(),
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi = crmCustomerProviderSpi,
+            batchRepositorySpi = mockk(relaxed = true)
+        )
+    }
+
+    @Test
+    fun `it should process customer update in CRM step`() {
+        // GIVEN
+        val crmClsCustomerData = CrmClsCustomerData(
+            batchId = batch.id!!,
+            reconciliationId = ReconciliationId(batchReference = batch.reference, rowReference = ReferenceId("ROW001")),
+            rowNumber = 1,
+            rowReference = ReferenceId("ROW001"),
+            crmData = CrmData(mainCountry = "FRANCE", firstName = "John", surname = "Doe", contactRole = "Client"),
+            clsData = emptyMap(),
+            id = "CUST001",
+            crmInsertedId = "OLD_ACC"
+        )
+
+        val crmResponsePayload = CrmCustomerResponsePayload(
+            crmAccountId = "ACC123",
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Updated",
+            crmRoleId = null
+        )
+
+        every { crmCustomerProviderSpi.updateCrmCustomer(crmClsCustomerData) } returns crmResponsePayload
+
+        // WHEN
+        importCustomerService.apply(batch, listOf(CustomerPayLoad(
+            rowNumber = crmClsCustomerData.rowNumber,
+            crmData = crmClsCustomerData.crmData,
+            clsData = crmClsCustomerData.clsData
+        )))
+
+        // THEN
+        val recordSlot = slot<RecordStepEvent>()
+        verify { recordStepEventRepositorySpi.save(capture(recordSlot)) }
+
+        assertEquals(RecordStepStatus.OK, recordSlot.captured.stepStatus)
+        assertEquals("Updated", recordSlot.captured.stepMessage)
+        assertEquals(batch.id, recordSlot.captured.batchId)
+        assertEquals(crmClsCustomerData.rowNumber, recordSlot.captured.rowNumber)
+
+        val customerSlot = slot<CrmClsCustomerData>()
+        verify { crmClsCustomerDataRepositorySpi.save(capture(customerSlot)) }
+
+        assertEquals("ACC123", customerSlot.captured.crmInsertedId)
+        assertTrue(customerSlot.captured.clsData.containsKey("SALESFORCE_ROLE_ID"))
+    }
+}
