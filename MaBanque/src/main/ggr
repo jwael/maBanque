@@ -1,0 +1,62 @@
+@Test
+fun `it should process customer creation in CRM step correctly`() {
+    val batch = LoaderBatch(
+        id = "BATCH_1",
+        reference = ReferenceId("REF0001"),
+        fileName = "file.csv",
+        triggeredBy = "user1",
+        countryCode = CountryCode("FR"),
+        status = LoaderBatchStatus.RUNNING,
+        type = LoaderBatchType.CONTACTS,
+        startDate = Instant.MIN,
+        endDate = null,
+        totalContacts = 1
+    )
+
+    // GIVEN : un CRM customer data
+    val crmClsCustomerData = CrmClsCustomerData(
+        batchId = batch.id!!,
+        reconciliationId = ReconciliationId(batchReference = batch.reference, rowReference = ReferenceId("ROW001")),
+        rowNumber = 1,
+        rowReference = ReferenceId("ROW001"),
+        crmData = CrmData(
+            firstName = "Jean",
+            surname = "Dupont",
+            contactRole = "Client",
+            mainCountry = "FRANCE"
+        ),
+        clsData = emptyMap(),
+        id = "CUST001",
+        crmInsertedId = null
+    )
+
+    val crmResponsePayload = CrmCustomerResponsePayload(
+        crmAccountId = "ACC123",
+        crmStatus = RecordStepStatus.OK,
+        crmMessage = "Created",
+        crmRoleId = null
+    )
+
+    every { crmCustomerProviderSpi.createCrmCustomer(any()) } returns crmResponsePayload
+    every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+    every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+
+    // WHEN
+    importCustomerService.apply(batch, listOf(CustomerPayload(
+        rowNumber = crmClsCustomerData.rowNumber,
+        crmData = crmClsCustomerData.crmData,
+        clsData = crmClsCustomerData.clsData
+    )))
+
+    // THEN
+    // Vérifie que createCrmCustomer est appelé une fois
+    verify(exactly = 1) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+
+    // Vérifie que la sauvegarde dans le repository est faite
+    verify(atLeast = 1) { crmClsCustomerDataRepositorySpi.save(any()) }
+
+    // Vérifie que l'événement de step est enregistré
+    verify(atLeast = 1) { recordStepEventRepositorySpi.save(match {
+        it.stepName == "SF_CREATE" && it.stepStatus == RecordStepStatus.OK
+    }) }
+}
