@@ -1,0 +1,39 @@
+@Test
+fun `it should update customer correctly in CRM`() {
+    val customerPayload = CustomerPayload(
+        rowNumber = 1,
+        crmData = CrmData(
+            firstName = "Antoine",
+            surname = "Dupont",
+            contactRole = "prospect",
+            mainCountry = "FR"
+        ),
+        clsData = emptyMap()
+    )
+
+    val crmResponse = CrmCustomerResponsePayload(
+        crmAccountId = "ACC123",
+        crmStatus = RecordStepStatus.OK,
+        crmMessage = "Customer updated",
+        crmRoleId = null
+    )
+
+    every { crmCustomerProviderSpi.updateCrmCustomer(any()) } returns crmResponse
+    every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+    every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+
+    // Appel de la fonction publique qui déclenche la private
+    importCustomerService.apply(batch, listOf(customerPayload))
+
+    // Capturer l'objet créé par apply()
+    val savedSlot = slot<CrmClsCustomerData>()
+    verify { crmClsCustomerDataRepositorySpi.save(capture(savedSlot)) }
+    assertEquals("ACC123", savedSlot.captured.crmInsertedId)
+    assertEquals("Antoine", savedSlot.captured.crmData.firstName)
+
+    val eventSlot = slot<RecordStepEvent>()
+    verify { recordStepEventRepositorySpi.save(capture(eventSlot)) }
+    assertEquals(SF_UPDATE, eventSlot.captured.stepName)
+    assertEquals(RecordStepStatus.OK, eventSlot.captured.stepStatus)
+    assertEquals("Customer updated", eventSlot.captured.stepMessage)
+}
