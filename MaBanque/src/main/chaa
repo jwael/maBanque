@@ -1,0 +1,91 @@
+@Test
+fun `apply should process all scenarios correctly`() {
+    // GIVEN: plusieurs comptes personnels
+    val personalAccounts = listOf(
+        CustomerPayload(
+            rowNumber = 1,
+            crmData = CrmData(firstName = "Antoine", surname = "Dupont", contactRole = "prospect", mainCountry = "FR"),
+            clsData = emptyMap(),
+            errorMessage = null
+        ),
+        CustomerPayload(
+            rowNumber = 2,
+            crmData = CrmData(firstName = "Marco", surname = "Rossi", contactRole = "client", mainCountry = "IT"),
+            clsData = emptyMap(),
+            errorMessage = null
+        ),
+        CustomerPayload(
+            rowNumber = 3,
+            crmData = CrmData(firstName = "Error", surname = "Client", contactRole = "prospect", mainCountry = "FR"),
+            clsData = emptyMap(),
+            errorMessage = "Validation error"
+        )
+    )
+
+    // GIVEN: crmClsCustomerData mocks
+    val crmDataFR = CrmClsCustomerData(
+        batchId = batch.id!!,
+        reconciliationId = ReconciliationId(batch.reference, ReferenceId("ROW001")),
+        rowNumber = 1,
+        rowReference = ReferenceId("ROW001"),
+        crmData = personalAccounts[0].crmData,
+        clsData = personalAccounts[0].clsData,
+        id = "CUST001",
+        crmInsertedId = null
+    )
+    val crmDataIT = CrmClsCustomerData(
+        batchId = batch.id!!,
+        reconciliationId = ReconciliationId(batch.reference, ReferenceId("ROW002")),
+        rowNumber = 2,
+        rowReference = ReferenceId("ROW002"),
+        crmData = personalAccounts[1].crmData,
+        clsData = personalAccounts[1].clsData,
+        id = "CUST002",
+        crmInsertedId = "ACC123"
+    )
+
+    // Mock création CrmClsCustomerData
+    every { createCrmClsCustomerData(batch, personalAccounts[0]) } returns crmDataFR
+    every { createCrmClsCustomerData(batch, personalAccounts[1]) } returns crmDataIT
+
+    // Mock traitement BLM
+    every { processCustomerSavingInBlmStep(crmDataFR) } returns crmDataFR.apply { /* CREATE */ }
+    every { processCustomerSavingInBlmStep(crmDataIT) } returns crmDataIT.apply { /* UPDATE */ }
+
+    // Mock les flags pour la logique de apply
+    every { crmDataFR.isCreateRole() } returns true
+    every { crmDataIT.isCrmUpdate() } returns true
+
+    // Mock processing des rôles et update
+    every { processCustomerCreationInCrmStep(any()) } returns Unit
+    every { processCustomerUpdateInCrmStep(any()) } returns Unit
+    every { processRoleCreationInCrmStep(any()) } returns Unit
+    every { processRoleUpdateInCrmStep(any()) } returns Unit
+
+    // Mock repository
+    every { recordStepEventRepositorySpi.save(any()) } returns Unit
+    every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+    every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+    // WHEN
+    importCustomerService.apply(batch, personalAccounts)
+
+    // THEN
+    // Vérifier BLM et creation
+    verify { processCustomerSavingInBlmStep(crmDataFR) }
+    verify { processRoleCreationInCrmStep(crmDataFR) }
+
+    // Vérifier update CRM
+    verify { processCustomerSavingInBlmStep(crmDataIT) }
+    verify { processCustomerUpdateInCrmStep(crmDataIT) }
+
+    // Vérifier KO pour l’account avec error
+    verify { 
+        recordStepEventRepositorySpi.save(
+            match { it.rowNumber == 3 && it.stepStatus == RecordStepStatus.KO && it.stepMessage == "Validation error" }
+        ) 
+    }
+
+    // Vérifier save batch
+    verify { batchRepositorySpi.save(batch) }
+}
