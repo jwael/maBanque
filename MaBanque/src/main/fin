@@ -1,0 +1,187 @@
+import io.mockk.*
+import org.junit.jupiter.api.*
+import java.time.Instant
+import java.util.stream.IntStream
+
+class ImportCustomersServiceTest {
+
+    // --- Dependencies (mockées)
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk(relaxed = true)
+    private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk(relaxed = true)
+    private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk(relaxed = true)
+    private val clockProvider: ClockProvider = mockk { every { now() } returns Instant.MIN }
+    private val referenceIdFactory: ReferenceIdFactory = mockk {
+        every { generate() } returnsMany IntStream.range(1, 5).mapToObj {
+            ReferenceId(value = it.toString().repeat(10))
+        }.toList()
+    }
+
+    // --- Données communes
+    private val batchReference = ReferenceId(value = "BATCH001")
+    private val countryCodeFR = CountryCode(countryCode = "FR")
+    private lateinit var newBatch: LoaderBatch
+    private lateinit var personalAccounts: List<CustomerPayload>
+
+    // --- Service à tester
+    private lateinit var importCustomerService: ImportCustomersService
+
+    @BeforeEach
+    fun setup() {
+        newBatch = LoaderBatch(
+            id = "BATCH_1",
+            reference = batchReference,
+            fileName = "customers.csv",
+            triggeredBy = "user1",
+            countryCode = countryCodeFR,
+            status = LoaderBatchStatus.RUNNING,
+            type = LoaderBatchType.CONTACTS,
+            startDate = Instant.MIN,
+            endDate = Instant.MIN,
+            totalContacts = 2
+        )
+
+        personalAccounts = IntStream.range(0, 2).mapToObj {
+            CustomerPayload(
+                rowNumber = it + 1,
+                crmData = CrmData(
+                    salutation = "Mr.",
+                    title = "Dr.",
+                    firstName = "Antoine",
+                    surname = "Dupont",
+                    gender = "Male",
+                    mainCountry = "FR",
+                    contactRole = "Customer"
+                ),
+                clsData = emptyMap(),
+                errorMessage = null
+            )
+        }.toList()
+
+        importCustomerService = ImportCustomersService(
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            clockProvider = clockProvider,
+            referenceIdFactory = referenceIdFactory,
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi = crmCustomerProviderSpi,
+            batchRepositorySpi = batchRepositorySpi
+        )
+    }
+
+    @Nested
+    @DisplayName("Apply method tests")
+    inner class ApplyTests {
+
+        @BeforeEach
+        fun setupMocks() {
+            every { batchRepositorySpi.save(any()) } answers { firstArg() }
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+        }
+
+        @Test
+        fun `should process all personal accounts successfully`() {
+            // WHEN
+            importCustomerService.apply(newBatch, personalAccounts)
+
+            // THEN
+            personalAccounts.forEach { account ->
+                verify {
+                    crmClsCustomerDataRepositorySpi.save(match { it.rowNumber == account.rowNumber })
+                }
+                verify {
+                    recordStepEventRepositorySpi.save(
+                        match {
+                            it.batchId == newBatch.id &&
+                            it.rowNumber == account.rowNumber &&
+                            it.stepStatus == RecordStepStatus.OK &&
+                            it.stepName == "BLM"
+                        }
+                    )
+                }
+            }
+            verify(exactly = 1) { batchRepositorySpi.save(any()) }
+        }
+
+        @Test
+        fun `should process customer creation when isCrmCreate`() {
+            val crmClsCustomerDataMock = mockk<CrmClsCustomerData>(relaxed = true)
+            every { crmClsCustomerDataMock.isCrmUpdate() } returns false
+            every { crmClsCustomerDataMock.isCreateRole() } returns false
+            every { crmClsCustomerDataMock.isUpdateRole() } returns false
+
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { crmClsCustomerDataMock }
+            every { crmCustomerProviderSpi.createCrmCustomer(any()) } just Runs
+
+            // WHEN
+            importCustomerService.apply(newBatch, personalAccounts)
+
+            // THEN
+            verify { crmCustomerProviderSpi.createCrmCustomer(crmClsCustomerDataMock) }
+        }
+
+        @Test
+        fun `should process customer update when isCrmUpdate`() {
+            val crmClsCustomerDataMock = mockk<CrmClsCustomerData>(relaxed = true)
+            every { crmClsCustomerDataMock.isCrmUpdate() } returns true
+            every { crmClsCustomerDataMock.isCreateRole() } returns false
+            every { crmClsCustomerDataMock.isUpdateRole() } returns false
+
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { crmClsCustomerDataMock }
+            every { crmCustomerProviderSpi.updateCrmCustomer(any()) } just Runs
+
+            // WHEN
+            importCustomerService.apply(newBatch, personalAccounts)
+
+            // THEN
+            verify { crmCustomerProviderSpi.updateCrmCustomer(crmClsCustomerDataMock) }
+        }
+
+        @Test
+        fun `should process role creation when isCreateRole`() {
+            val crmClsCustomerDataMock = mockk<CrmClsCustomerData>(relaxed = true)
+            every { crmClsCustomerDataMock.isCreateRole() } returns true
+            every { crmClsCustomerDataMock.isUpdateRole() } returns false
+            every { crmClsCustomerDataMock.isCrmUpdate() } returns false
+
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { crmClsCustomerDataMock }
+            every { crmCustomerProviderSpi.createRoleInCrm(any()) } just Runs
+
+            importCustomerService.apply(newBatch, personalAccounts)
+
+            verify { crmCustomerProviderSpi.createRoleInCrm(crmClsCustomerDataMock) }
+        }
+
+        @Test
+        fun `should process role update when isUpdateRole`() {
+            val crmClsCustomerDataMock = mockk<CrmClsCustomerData>(relaxed = true)
+            every { crmClsCustomerDataMock.isUpdateRole() } returns true
+            every { crmClsCustomerDataMock.isCreateRole() } returns false
+            every { crmClsCustomerDataMock.isCrmUpdate() } returns false
+
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { crmClsCustomerDataMock }
+            every { crmCustomerProviderSpi.updateRoleInCrm(any()) } just Runs
+
+            importCustomerService.apply(newBatch, personalAccounts)
+
+            verify { crmCustomerProviderSpi.updateRoleInCrm(crmClsCustomerDataMock) }
+        }
+
+        @Test
+        fun `should save KO step when personalAccount has errorMessage`() {
+            val errorAccount = personalAccounts.first().copy(errorMessage = "Validation failed")
+
+            importCustomerService.apply(newBatch, listOf(errorAccount))
+
+            verify {
+                recordStepEventRepositorySpi.save(
+                    match {
+                        it.stepStatus == RecordStepStatus.KO &&
+                        it.stepMessage == "Validation failed" &&
+                        it.rowNumber == errorAccount.rowNumber
+                    }
+                )
+            }
+        }
+    }
+}
