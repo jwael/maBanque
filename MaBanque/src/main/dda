@@ -1,0 +1,44 @@
+@ParameterizedTest
+@CsvSource(
+    "OK, ACC123",
+    "KO, ACC456"
+)
+fun `it should process customer creation in CRM step without map function`(
+    expectedStatusName: String, crmAccountId: String
+) {
+    val expectedStatus = RecordStepStatus.valueOf(expectedStatusName) // direct from enum
+
+    val crmClsCustomerData = CrmClsCustomerData(
+        batchId = batch.id!!,
+        reconciliationId = ReconciliationId(batchReference = batch.reference, rowReference = ReferenceId("ROW001")),
+        rowNumber = 1,
+        rowReference = ReferenceId("ROW001"),
+        crmData = CrmData(firstName = "John", surname = "Doe", mainCountry = "FRANCE", contactRole = "Client"),
+        clsData = emptyMap(),
+        id = "CUST001",
+        crmInsertedId = null
+    )
+
+    val crmResponsePayload = CrmCustomerResponsePayload(
+        crmAccountId = crmAccountId,
+        crmStatus = expectedStatus,
+        crmMessage = "Created",
+        crmRoleId = null
+    )
+
+    every { crmCustomerProviderSpi.createCrmCustomer(crmClsCustomerData) } returns crmResponsePayload
+    every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+    every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+
+    importCustomerService.apply(batch, listOf(
+        CustomerPayLoad(
+            rowNumber = crmClsCustomerData.rowNumber,
+            crmData = crmClsCustomerData.crmData,
+            clsData = crmClsCustomerData.clsData
+        )
+    ))
+
+    verify { crmCustomerProviderSpi.createCrmCustomer(any()) }
+    verify { crmClsCustomerDataRepositorySpi.save(any()) }
+    verify { recordStepEventRepositorySpi.save(match { it.stepStatus == expectedStatus }) }
+}
