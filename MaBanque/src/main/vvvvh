@@ -1,0 +1,166 @@
+@ExtendWith(MockKExtension::class)
+class ImportCustomersServiceTest {
+
+    // --- Dependencies (mockées)
+    private val recordStepEventRepositorySpi = mockk<RecordStepEventRepositorySpi>(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi = mockk<CrmClsCustomerDataRepositorySpi>(relaxed = true)
+    private val crmCustomerProviderSpi = mockk<CrmCustomerProviderSpi>(relaxed = true)
+    private val batchRepositorySpi = mockk<BatchRepositoryForContactsSpi>(relaxed = true)
+    private val clockProvider = mockk<ClockProvider> { every { now() } returns Instant.MIN }
+    private val referenceIdFactory = mockk<ReferenceIdFactory> {
+        every { generate() } returnsMany IntStream.range(1, 9)
+            .mapToObj { ReferenceId(value = it.toString().repeat(10)) }
+            .toList()
+    }
+
+    // --- Service à tester
+    private lateinit var importCustomerService: ImportCustomersService
+
+    // --- Données communes
+    private val contactsCount = 2
+    private lateinit var batchReference: ReferenceId
+    private lateinit var countryCodeFR: CountryCode
+    private lateinit var newBatch: LoaderBatch
+    private lateinit var personalAccounts: List<CustomerPayload>
+
+    @BeforeEach
+    fun setUp() {
+        importCustomerService = ImportCustomersService(
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi = crmCustomerProviderSpi,
+            batchRepositorySpi = batchRepositorySpi,
+            logger = mockk(relaxed = true)
+        )
+
+        batchReference = ReferenceId(value = "BATCH_REF")
+        countryCodeFR = CountryCode(countryCode = "FR")
+
+        newBatch = LoaderBatch(
+            id = "AAAAA",
+            reference = batchReference,
+            fileName = "file.csv",
+            triggeredBy = "user-001",
+            countryCode = countryCodeFR,
+            status = LoaderBatchStatus.RUNNING,
+            startDate = Instant.MIN,
+            endDate = Instant.MIN,
+            totalContacts = contactsCount,
+            type = LoaderBatchType.CONTACTS
+        )
+
+        personalAccounts = IntStream.range(0, contactsCount).mapToObj { i ->
+            CustomerPayload(
+                rowNumber = i + 1,
+                errorMessage = null,
+                crmData = Instancio.of(CrmData::class.java)
+                    .set(CrmData::salesforceRoleId, null)
+                    .set(CrmData::salesforceContactId, null)
+                    .set(CrmData::firstName, "Test$i")
+                    .set(CrmData::surname, "User$i")
+                    .set(CrmData::contactRole, "Prospect")
+                    .set(CrmData::mainCountry, "FR")
+                    .create(),
+                clsData = emptyMap()
+            )
+        }.toList()
+    }
+
+    @Nested
+    inner class ApplyTests {
+
+        @Test
+        fun `apply should process SF_CREATE scenario`() {
+            // GIVEN
+            val crmClsCustomerData = CrmClsCustomerData()
+            val savedCrmClsCustomerData = crmClsCustomerData.copy(
+                crmInsertedId = "ACC123"
+            )
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            every { crmCustomerProviderSpi.createCrmCustomer(any()) } returns CrmCustomerResponsePayload(
+                crmAccountId = "ACC123",
+                crmStatus = RecordStepStatus.OK,
+                crmMessage = "Customer created",
+                crmRoleId = null
+            )
+            every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+            // WHEN
+            importCustomerService.apply(newBatch, personalAccounts)
+
+            // THEN
+            verify(exactly = personalAccounts.size) {
+                crmClsCustomerDataRepositorySpi.save(any())
+            }
+            verify(exactly = personalAccounts.size) {
+                crmCustomerProviderSpi.createCrmCustomer(any())
+            }
+            verify(exactly = 1) { batchRepositorySpi.save(match { it.status == LoaderBatchStatus.IMPORTED }) }
+        }
+
+        @Test
+        fun `apply should handle KO scenario when errorMessage is present`() {
+            // GIVEN
+            val errorMessage = "Validation error"
+            val badAccount = personalAccounts.first().copy(errorMessage = errorMessage)
+            val badAccounts = listOf(badAccount)
+
+            // WHEN
+            importCustomerService.apply(newBatch, badAccounts)
+
+            // THEN
+            verify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
+            verify {
+                recordStepEventRepositorySpi.save(match {
+                    it.stepStatus == RecordStepStatus.KO &&
+                    it.stepName == "BLM" &&
+                    it.stepMessage == errorMessage
+                })
+            }
+        }
+
+        @Test
+        fun `apply should process SF_ROLE_CREATE scenario`() {
+            // GIVEN
+            val crmClsCustomerData = CrmClsCustomerData()
+            val savedCrmClsCustomerData = crmClsCustomerData.copy(
+                crmInsertedId = "ACC123"
+            )
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            every { crmCustomerProviderSpi.createCrmRole(any()) } returns CrmRoleResponsePayload(
+                crmStatus = RecordStepStatus.OK,
+                crmMessage = "Role created"
+            )
+
+            // WHEN
+            importCustomerService.apply(newBatch, personalAccounts)
+
+            // THEN
+            verify(exactly = personalAccounts.size) { crmClsCustomerDataRepositorySpi.save(any()) }
+            verify(exactly = personalAccounts.size) { crmCustomerProviderSpi.createCrmRole(any()) }
+        }
+
+        @Test
+        fun `apply should process SF_UPDATE scenario`() {
+            // GIVEN
+            val crmClsCustomerData = CrmClsCustomerData()
+            val savedCrmClsCustomerData = crmClsCustomerData.copy(
+                crmInsertedId = "ACC123"
+            )
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            every { crmCustomerProviderSpi.updateCrmCustomer(any()) } returns CrmCustomerResponsePayload(
+                crmAccountId = "ACC123",
+                crmStatus = RecordStepStatus.OK,
+                crmMessage = "Customer updated",
+                crmRoleId = null
+            )
+
+            // WHEN
+            importCustomerService.apply(newBatch, personalAccounts)
+
+            // THEN
+            verify(exactly = personalAccounts.size) { crmClsCustomerDataRepositorySpi.save(any()) }
+            verify(exactly = personalAccounts.size) { crmCustomerProviderSpi.updateCrmCustomer(any()) }
+        }
+    }
+}
