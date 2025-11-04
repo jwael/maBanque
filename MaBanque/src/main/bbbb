@@ -1,0 +1,60 @@
+@Test
+fun `it should process all customer scenarios correctly`() = runBlocking {
+    // GIVEN
+    val customer1 = CustomerPayload(
+        rowNumber = 1,
+        crmData = CrmData(
+            firstName = "Antoine",
+            surname = "Dupont",
+            contactRole = "Client",
+            mainCountry = "FR"
+        ),
+        clsData = emptyMap()
+    )
+
+    val customer2 = CustomerPayload(
+        rowNumber = 2,
+        crmData = CrmData(
+            firstName = "Marco",
+            surname = "Rossi",
+            contactRole = "Prospect",
+            mainCountry = "IT"
+        ),
+        clsData = emptyMap()
+    )
+
+    // Mock responses for CRM provider
+    every { crmCustomerProviderSpi.createCrmCustomer(any()) } returns CrmCustomerResponsePayload(
+        crmAccountId = "ACC123",
+        crmStatus = RecordStepStatus.OK,
+        crmMessage = "Customer created",
+        crmRoleId = null
+    )
+
+    every { crmCustomerProviderSpi.updateCrmCustomer(any()) } returns CrmCustomerResponsePayload(
+        crmAccountId = "ACC123",
+        crmStatus = RecordStepStatus.OK,
+        crmMessage = "Customer updated",
+        crmRoleId = null
+    )
+
+    every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+    every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+    every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+    // WHEN
+    importCustomerService.apply(batch, listOf(customer1, customer2))
+
+    // THEN - Capture saved CRM data
+    val savedSlot = slot<CrmClsCustomerData>()
+    verify(exactly = 2) { crmClsCustomerDataRepositorySpi.save(capture(savedSlot)) }
+    val savedCustomer = savedSlot.captured
+    assertEquals("ACC123", savedCustomer.crmInsertedId)
+
+    // THEN - Capture RecordStepEvents
+    val stepEventSlot = slot<RecordStepEvent>()
+    verify(exactly = 2) { recordStepEventRepositorySpi.save(capture(stepEventSlot)) }
+    val savedStepEvent = stepEventSlot.captured
+    assertTrue(savedStepEvent.stepStatus == RecordStepStatus.OK)
+    assertTrue(savedStepEvent.stepName in listOf("SF_CREATE", "SF_UPDATE", "SF_ROLE_CREATE", "SF_ROLE_UPDATE"))
+}
