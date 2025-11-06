@@ -1,0 +1,17 @@
+@Test
+fun `should process role creation when isCreateRole`() {
+    // GIVEN
+    val crmClsCustomerDataMock = mockk<CrmClsCustomerData>(relaxed = true)
+    every { crmClsCustomerDataMock.isCreateRole() } returns true
+    every { crmClsCustomerDataMock.isUpdateRole() } returns false
+    every { crmClsCustomerDataMock.isCrmUpdate() } returns false
+
+    every { crmClsCustomerDataRepositorySpi.save(any()) } returns crmClsCustomerDataMock
+
+    // WHEN
+    importCustomerService.apply(newBatch, personalAccounts)
+
+    // THEN
+    verify(exactly = 1) { crmCustomerProviderSpi.createCrmRole(any()) }
+    verify(exactly = 0) { crmCustomerProviderSpi.updateCrmRole(any()) }
+}
