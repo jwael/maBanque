@@ -1,0 +1,25 @@
+@Test
+fun `should process all personal accounts successfully`() {
+    // WHEN
+    importCustomerService.apply(newBatch, personalAccounts)
+
+    // THEN
+    // Vérifie que chaque personalAccount a déclenché un enregistrement de step OK pour le step BLM
+    verify(exactly = personalAccounts.size) {
+        recordStepEventRepositorySpi.save(
+            match {
+                it.batchId == newBatch.id &&
+                it.stepStatus == RecordStepStatus.OK &&
+                it.stepName == RecordStepName.BLM
+            }
+        )
+    }
+
+    // Vérifie que le CRM a bien été appelé pour chaque customer
+    verify(exactly = personalAccounts.size) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+
+    // Vérifie que le batch a bien été sauvegardé avec le statut final IMPORTED
+    verify(exactly = 1) {
+        batchRepositorySpi.save(match { it.status == LoaderBatchStatus.IMPORTED })
+    }
+}
