@@ -1,0 +1,102 @@
+@ExtendWith(MockKExtension::class)
+class CrmCustomerProviderAdaptorUpdateRoleTest {
+
+    // --- Mocks
+    private val crmClient: CrmClient = mockk(relaxed = true)
+    private val clockProvider: ClockProvider = mockk { every { now() } returns Instant.MIN }
+
+    // --- Service
+    private lateinit var crmCustomerProviderAdaptor: CrmCustomerProviderAdaptor
+
+    @BeforeEach
+    fun setup() {
+        crmCustomerProviderAdaptor = CrmCustomerProviderAdaptor(
+            crmClient = crmClient,
+            clockProvider = clockProvider
+        )
+    }
+
+    @Nested
+    @DisplayName("updateCrmRole - use cases")
+    inner class UpdateCrmRoleUseCases {
+
+        @ParameterizedTest(name = "update CRM role: {0}")
+        @CsvSource(
+            "CUST001,BATCH001,1,ROW001,FR,ACC123,ROLE001,true",
+            "CUST002,BATCH002,2,ROW002,FR,ACC456,ROLE002,false"
+        )
+        fun `should update CRM role successfully`(
+            id: String,
+            batchId: String,
+            rowNumber: Int,
+            rowReferenceValue: String,
+            countryCode: String,
+            salesforceContactId: String,
+            salesforceRoleId: String,
+            authorizedSignature: Boolean
+        ) {
+            // GIVEN: CrmRoleData mock
+            val crmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true) {
+                every { this@mockk.salesforceContactId } returns salesforceContactId
+                every { this@mockk.salesforceRoleId } returns salesforceRoleId
+                every { this@mockk.crmData?.authorizedSignature } returns authorizedSignature
+            }
+
+            val crmRoleData = CrmRoleData(
+                reconciliationId = ReconciliationId(ReferenceId("REF$id")),
+                batchId = batchId,
+                rowNumber = rowNumber,
+                crmCustomerData = CrmData(),
+                crmContactData = CrmData()
+            )
+
+            // Mock de la réponse du client
+            val crmRoleResponse = mockk<Response<CrmRoleResponse>>(relaxed = true)
+            every { crmRoleResponse.isSuccessful } returns true
+            every { crmRoleResponse.body() } returns CrmRoleResponse(
+                accountId = salesforceContactId,
+                message = "Role updated",
+                status = "OK",
+                roles = emptyList()
+            )
+            every {
+                crmClient.updateRole(
+                    correlationId = any(),
+                    contactId = any(),
+                    roleId = any(),
+                    roleRequest = any()
+                ).execute()
+            } returns crmRoleResponse
+
+            // WHEN
+            val result = crmCustomerProviderAdaptor.updateCrmRole(crmRoleData)
+
+            // THEN
+            assertEquals(RecordStepStatus.OK, result.crmStatus)
+            assertEquals("Role updated", result.crmMessage)
+        }
+
+        @Test
+        fun `should return KO when CRM client fails`() {
+            val crmRoleData = CrmRoleData(
+                reconciliationId = ReconciliationId(ReferenceId("REF001")),
+                batchId = "BATCH001",
+                rowNumber = 1,
+                crmCustomerData = CrmData(),
+                crmContactData = CrmData()
+            )
+
+            val crmRoleResponse = mockk<Response<CrmRoleResponse>>(relaxed = true)
+            every { crmRoleResponse.isSuccessful } returns false
+            every { crmRoleResponse.errorBody()?.charStream()?.readText() } returns "ERROR"
+            every {
+                crmClient.updateRole(any(), any(), any(), any()).execute()
+            } returns crmRoleResponse
+
+            val result = crmCustomerProviderAdaptor.updateCrmRole(crmRoleData)
+
+            assertEquals(RecordStepStatus.KO, result.crmStatus)
+            assertTrue(result.crmMessage!!.contains("ERROR"))
+        }
+    }
+}
