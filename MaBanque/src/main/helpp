@@ -1,0 +1,89 @@
+package com.arval.blm.infrastructure.driven.apigee.crm.b2c
+
+import com.arval.blm.domain.model.crm.*
+import com.arval.blm.infrastructure.driven.apigee.crm.b2c.dto.CrmCustomerResponse
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import kotlin.reflect.full.declaredFunctions
+import kotlin.reflect.jvm.isAccessible
+
+class CrmCustomerProviderAdapterTest {
+
+    private val adaptor = CrmCustomerProviderAdapter(mockk(relaxed = true))
+
+    // --- 🧩 UTILITAIRE POUR APPELER LES MÉTHODES PRIVÉES KOTLIN ---
+    private fun callPrivateMethodKotlin(methodName: String, vararg args: Any?): Any? {
+        val kFunction = adaptor::class.declaredFunctions.firstOrNull { it.name == methodName }
+            ?: error("Méthode '$methodName' introuvable dans ${adaptor::class.simpleName}")
+        kFunction.isAccessible = true
+        return kFunction.call(adaptor, *args)
+    }
+
+    // --- 🧪 TEST 1 : failureCrmCustomerResponsePayLoad ---
+    @ParameterizedTest
+    @DisplayName("Test failureCrmCustomerResponsePayLoad retourne un payload KO")
+    @CsvSource(
+        "Erreur API CRM",
+        "Données manquantes",
+        "Timeout côté serveur"
+    )
+    fun `should return failure CrmCustomerResponsePayload when error message given`(failureMessage: String) {
+        // WHEN
+        val result = callPrivateMethodKotlin("failureCrmCustomerResponsePayLoad", failureMessage)
+                as CrmCustomerResponsePayload
+
+        // THEN
+        assertEquals(RecordStepStatus.KO, result.crmStatus)
+        assertEquals(failureMessage, result.crmMessage)
+        assertNull(result.crmAccountId)
+        assertNull(result.crmRoleId)
+    }
+
+    // --- 🧪 TEST 2 : caixaUpdateCrmCustomerResponsePayLoad ---
+    @ParameterizedTest
+    @DisplayName("Test caixaUpdateCrmCustomerResponsePayLoad retourne un payload WARNING")
+    @CsvSource(
+        "ACC001, OK",
+        "ACC002, Role déjà existant"
+    )
+    fun `should return warning CrmCustomerResponsePayload when caixa update is triggered`(
+        accountId: String,
+        message: String
+    ) {
+        val crmResponse = CrmCustomerResponse(
+            accountId = accountId,
+            message = message,
+            status = "SUCCESS",
+            roles = emptyList()
+        )
+
+        val result = callPrivateMethodKotlin("caixaUpdateCrmCustomerResponsePayLoad", crmResponse)
+                as CrmCustomerResponsePayload
+
+        assertEquals(RecordStepStatus.WARNING, result.crmStatus)
+        assertEquals(accountId, result.crmAccountId)
+        assertNull(result.crmRoleId)
+        assertNull(result.crmMessage)
+    }
+
+    // --- 🧪 TEST 3 : failureCrmRoleResponsePayLoad ---
+    @ParameterizedTest
+    @DisplayName("Test failureCrmRoleResponsePayLoad retourne un payload KO")
+    @CsvSource(
+        "Erreur rôle introuvable",
+        "Erreur API rôle CRM",
+        "Connexion interrompue"
+    )
+    fun `should return failure CrmRoleResponsePayload when role fails`(failureMessage: String) {
+        val result = callPrivateMethodKotlin("failureCrmRoleResponsePayLoad", failureMessage)
+                as CrmRoleResponsePayload
+
+        assertEquals(RecordStepStatus.KO, result.crmStatus)
+        assertEquals(failureMessage, result.crmMessage)
+        assertNull(result.crmRoleId)
+    }
+}
