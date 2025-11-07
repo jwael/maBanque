@@ -1,0 +1,77 @@
+@Nested
+@DisplayName("CrmCustomerProviderAdaptor - createCrmCustomer")
+inner class CreateCrmCustomerTests {
+
+    private val crmClient: CrmClient = mockk()
+    private lateinit var provider: CrmCustomerProviderAdaptor
+
+    @BeforeEach
+    fun setup() {
+        provider = CrmCustomerProviderAdaptor(crmClient)
+    }
+
+    @Test
+    fun `should return success payload when CRM call succeeds`() {
+        // GIVEN
+        val crmData = mockk<CrmClsCustomerData>(relaxed = true)
+        val crmRequest = mockk<CrmCustomerRequest>()
+        every { crmData.toCrmCustomerRequest(isCrmUpdate = false) } returns crmRequest
+
+        val crmResponse = mockk<Response<CrmCustomerResponse>>()
+        every { crmResponse.isSuccessful } returns true
+        val responseBody = mockk<CrmCustomerResponse>()
+        every { crmResponse.body() } returns responseBody
+        every { responseBody.toDomain() } returns CrmCustomerResponsePayload(
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Created",
+            crmAccountId = "ACC123",
+            crmRoleId = null
+        )
+
+        every { crmClient.createCustomer(any(), any()) } returns crmResponse
+
+        // WHEN
+        val result = provider.createCrmCustomer(crmData)
+
+        // THEN
+        assertEquals(RecordStepStatus.OK, result.crmStatus)
+        assertEquals("ACC123", result.crmAccountId)
+        verify { crmData.toCrmCustomerRequest(false) }
+        verify { crmClient.createCustomer(any(), any()) }
+    }
+
+    @Test
+    fun `should return failure payload when CRM call fails`() {
+        // GIVEN
+        val crmData = mockk<CrmClsCustomerData>(relaxed = true)
+        val crmRequest = mockk<CrmCustomerRequest>()
+        every { crmData.toCrmCustomerRequest(false) } returns crmRequest
+
+        val crmResponse = mockk<Response<CrmCustomerResponse>>()
+        every { crmResponse.isSuccessful } returns false
+        every { crmResponse.errorBody()?.charStream()?.readText() } returns "{\"message\":\"Error\"}"
+
+        every { crmClient.createCustomer(any(), any()) } returns crmResponse
+
+        // WHEN
+        val result = provider.createCrmCustomer(crmData)
+
+        // THEN
+        assertEquals(RecordStepStatus.KO, result.crmStatus)
+        assertEquals("Error", result.crmMessage)
+    }
+
+    @Test
+    fun `should return failure payload when exception occurs`() {
+        // GIVEN
+        val crmData = mockk<CrmClsCustomerData>(relaxed = true)
+        every { crmData.toCrmCustomerRequest(false) } throws RuntimeException("Boom!")
+
+        // WHEN
+        val result = provider.createCrmCustomer(crmData)
+
+        // THEN
+        assertEquals(RecordStepStatus.KO, result.crmStatus)
+        assert(result.crmMessage!!.contains("Boom!"))
+    }
+}
