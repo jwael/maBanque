@@ -1,0 +1,103 @@
+import io.mockk.mockk
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
+import io.mockk.junit5.MockKExtension
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import java.lang.reflect.Method
+
+@ExtendWith(MockKExtension::class)
+class CrmCustomerProviderAdaptorPrivateHelpersTest {
+
+    // Mock des dépendances nécessaires au constructeur de l'adapter (adapter minimal)
+    // Adapte ces mocks / constructeur si ta classe a d'autres paramètres requis.
+    private val crmClient = mockk<Any>(relaxed = true)
+    private val clockProvider = mockk<Any>(relaxed = true)
+
+    private lateinit var adaptor: CrmCustomerProviderAdaptor
+
+    @BeforeEach
+    fun setup() {
+        // Remplace le constructeur par le tien si signature différente.
+        adaptor = CrmCustomerProviderAdaptor(
+            crmClient = crmClient,
+            clockProvider = clockProvider
+        )
+    }
+
+    private fun callPrivateMethod(methodName: String, paramTypes: Array<Class<*>>, vararg args: Any?): Any? {
+        val method: Method = adaptor::class.java.getDeclaredMethod(methodName, *paramTypes)
+        method.isAccessible = true
+        return method.invoke(adaptor, *args)
+    }
+
+    @Nested
+    @DisplayName("Helpers privés -> payloads")
+    inner class PrivateHelpers {
+
+        @Test
+        fun `failureCrmCustomerResponsePayLoad should return KO payload with message`() {
+            // GIVEN
+            val failureMessage = "Something failed in CRM"
+
+            // WHEN
+            val result = callPrivateMethod(
+                "failureCrmCustomerResponsePayLoad",
+                arrayOf(String::class.java),
+                failureMessage
+            ) as CrmCustomerResponsePayload
+
+            // THEN
+            assertEquals(RecordStepStatus.KO, result.crmStatus, "Le statut doit être KO")
+            assertEquals(failureMessage, result.crmMessage, "Le message d'erreur doit être le même")
+            assertNull(result.crmAccountId, "crmAccountId doit être null en échec")
+            assertNull(result.crmRoleId, "crmRoleId doit être null en échec")
+        }
+
+        @Test
+        fun `caixaUpdateCrmCustomerResponsePayLoad should return WARNING with accountId`() {
+            // GIVEN
+            val crmResponse = CrmCustomerResponse(
+                accountId = "CAIXA_ACC_001",
+                message = "Record exists",
+                status = "WARNING",
+                roles = emptyList()
+            )
+
+            // WHEN
+            val result = callPrivateMethod(
+                "caixaUpdateCrmCustomerResponsePayLoad",
+                arrayOf(CrmCustomerResponse::class.java),
+                crmResponse
+            ) as CrmCustomerResponsePayload
+
+            // THEN
+            assertEquals(RecordStepStatus.WARNING, result.crmStatus, "Le statut doit être WARNING pour Caixa update")
+            // D'après ta fonction tu mettais crmMessage = null dans le WARNING — on checke donc null.
+            assertNull(result.crmMessage, "crmMessage attendu null pour caixaUpdate")
+            assertEquals("CAIXA_ACC_001", result.crmAccountId, "crmAccountId doit provenir de la réponse CRM")
+            assertNull(result.crmRoleId, "crmRoleId doit rester null")
+        }
+
+        @Test
+        fun `failureCrmRoleResponsePayLoad should return KO payload with message`() {
+            // GIVEN
+            val failureMessage = "Role update failed"
+
+            // WHEN
+            val result = callPrivateMethod(
+                "failureCrmRoleResponsePayLoad",
+                arrayOf(String::class.java),
+                failureMessage
+            ) as CrmRoleResponsePayload
+
+            // THEN
+            assertEquals(RecordStepStatus.KO, result.crmStatus, "Le statut doit être KO pour failureCrmRoleResponsePayLoad")
+            assertEquals(failureMessage, result.crmMessage, "Le message d'erreur doit correspondre")
+            assertNull(result.crmRoleId, "crmRoleId doit être null en échec")
+        }
+    }
+}
