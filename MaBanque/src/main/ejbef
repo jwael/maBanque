@@ -1,0 +1,65 @@
+import io.mockk.*
+import org.junit.jupiter.api.*
+import org.junit.jupiter.api.extension.ExtendWith
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.LocalDate
+
+@ExtendWith(MockKExtension::class)
+class CrmRoleRequestTest {
+
+    private val reconciliationId = ReconciliationId("REF001")
+
+    @Nested
+    @DisplayName("CrmRoleData -> CrmContactRoleUpdateRequest")
+    inner class ToCrmContactRoleUpdateRequestTests {
+
+        @ParameterizedTest(
+            name = "roleCode={0}, start={1}, end={2}, accountExternalCode={3}, relatedAccountExternalId={4}, relatedAccountId={5}, mainContact={6}"
+        )
+        @CsvSource(
+            "MANAGER, 2025-01-01, 2025-12-31, EXT001, REL001, ACC123, true",
+            "SUPERVISOR, 2025-02-01, 2025-11-30, EXT002, REL002, ACC456, false"
+        )
+        fun `should convert CrmRoleData to CrmContactRoleUpdateRequest`(
+            roleCode: String,
+            start: String,
+            end: String,
+            accountExternalCode: String,
+            relatedAccountExternalId: String,
+            relatedAccountId: String,
+            mainContact: Boolean
+        ) {
+            // GIVEN
+            val crmContactData = CrmData(
+                startDate = LocalDate.parse(start),
+                endDate = LocalDate.parse(end),
+                contactRole = roleCode,
+                roleClsCompanyCode = accountExternalCode,
+                companyCode = relatedAccountExternalId,
+                sfRelatedAccount = relatedAccountId,
+                mainContact = mainContact
+            )
+
+            val roleData = CrmRoleData(
+                reconciliationId = reconciliationId,
+                batchId = "BATCH001",
+                rowNumber = 1,
+                crmContactData = crmContactData
+            )
+
+            // WHEN
+            val request = roleData.toCrmContactRoleUpdateRequest()
+
+            // THEN
+            Assertions.assertEquals(reconciliationId.print(), request.correlationId)
+            Assertions.assertEquals(roleCode, request.data.roleCode)
+            Assertions.assertEquals(start, request.data.startDate)
+            Assertions.assertEquals(end, request.data.endDate)
+            Assertions.assertEquals(accountExternalCode, request.data.accountExternalCode)
+            Assertions.assertEquals(relatedAccountExternalId, request.data.relatedAccountExternalId)
+            Assertions.assertEquals(relatedAccountId, request.data.relatedAccountId)
+            Assertions.assertEquals(mainContact, request.data.isMainContact)
+        }
+    }
+}
