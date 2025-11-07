@@ -1,0 +1,96 @@
+@ExtendWith(MockKExtension::class)
+class CrmContactProviderAdapterCreateRoleTest {
+
+    @MockK
+    lateinit var crmClient: CrmClient
+
+    @InjectMockKs
+    lateinit var crmContactProviderAdapter: CrmContactProviderAdapter
+
+    @MockK
+    lateinit var call: Call<RolesResponse>
+
+    @MockK
+    lateinit var response: Response<RolesResponse>
+
+    companion object {
+        private val SUCCESS_ROLE_ID = "ROLE-9999"
+        private val SUCCESS_RESPONSE = RolesResponse(
+            accountId = "ACC123",
+            message = "Role successfully created",
+            status = "SUCCESS",
+            roles = emptyList()
+        )
+
+        private val ERROR_RESPONSE = RolesResponse(
+            accountId = null,
+            message = "Role creation failed",
+            status = "ERROR",
+            roles = null
+        )
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "SUCCESS,Role successfully created,OK",
+        "ERROR,Role creation failed,KO"
+    )
+    fun `should handle successful and failed role creation responses`(
+        status: String,
+        message: String,
+        expectedStatus: String
+    ) {
+        // GIVEN
+        val crmRoleData = CrmRoleData(
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId("BATCH-123"),
+                rowReference = ReferenceId("ROW-123")
+            ),
+            batchId = "BATCH-123",
+            rowNumber = 1,
+            crmContactData = CrmData(
+                salesforceContactId = "CONTACT-9999",
+                firstName = "John",
+                surname = "Doe",
+                contactRole = "SIGNATORY",
+                roleClsCompanyCode = "CXR",
+                companyCode = "COMPANY123",
+                sfRelatedAccount = "RELACC123",
+                mainContact = true
+            )
+        )
+
+        val crmRoleRequest = crmRoleData.toCrmContactRoleRequest()
+
+        every {
+            crmClient.createRole(
+                correlationId = crmRoleRequest.correlationId,
+                contactId = any(),
+                roleRequest = any()
+            )
+        } returns call
+
+        every { call.execute() } returns response
+
+        if (status == "SUCCESS") {
+            every { response.isSuccessful } returns true
+            every { response.body() } returns SUCCESS_RESPONSE
+        } else {
+            every { response.isSuccessful } returns false
+            every { response.errorBody()?.charStream()?.readText() } returns message
+            every { response.body() } returns null
+        }
+
+        // WHEN
+        val result = crmContactProviderAdapter.createCrmRole(crmRoleData)
+
+        // THEN
+        if (status == "SUCCESS") {
+            assertEquals(RecordStepStatus.OK, result.crmStatus)
+            assertEquals("Role successfully created", result.crmMessage)
+        } else {
+            assertEquals(RecordStepStatus.KO, result.crmStatus)
+            assertTrue(result.crmMessage?.contains("Role creation failed") == true)
+        }
+    }
+}
