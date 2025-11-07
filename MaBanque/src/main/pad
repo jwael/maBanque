@@ -1,0 +1,59 @@
+package com.arval.blm.infrastructure.driven.apigee.crm.b2c
+
+import com.arval.blm.domain.model.crm.*
+import io.mockk.mockk
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import kotlin.reflect.full.declaredFunctions
+import kotlin.reflect.jvm.isAccessible
+
+class CrmContactProviderAdapterTest {
+
+    private val adapter = CrmContactProviderAdapter(mockk(relaxed = true))
+
+    // --- 🧩 Utilitaire pour appeler les fonctions privées Kotlin ---
+    private fun callPrivateMethodKotlin(methodName: String, vararg args: Any?): Any? {
+        val kFunction = adapter::class.declaredFunctions.firstOrNull { it.name == methodName }
+            ?: error("Méthode '$methodName' introuvable dans ${adapter::class.simpleName}")
+        kFunction.isAccessible = true
+        return kFunction.call(adapter, *args)
+    }
+
+    // --- 🧪 TEST 1 : failureCrmContactResponsePayLoad ---
+    @ParameterizedTest
+    @DisplayName("Test failureCrmContactResponsePayLoad retourne un payload KO")
+    @CsvSource(
+        "Erreur API CRM Contact",
+        "Contact introuvable dans Salesforce",
+        "Erreur de mapping Contact"
+    )
+    fun `should return failure CrmContactResponsePayload when error message given`(failureMessage: String) {
+        // WHEN
+        val result = callPrivateMethodKotlin("failureCrmContactResponsePayLoad", failureMessage)
+                as CrmContactResponsePayload
+
+        // THEN
+        assertEquals(RecordStepStatus.KO, result.crmStatus)
+        assertEquals(failureMessage, result.crmErrorMessage)
+        assertNull(result.crmInsertedId)
+    }
+
+    // --- 🧪 TEST 2 : failureCrmRoleResponsePayLoad ---
+    @ParameterizedTest
+    @DisplayName("Test failureCrmRoleResponsePayLoad retourne un payload KO")
+    @CsvSource(
+        "Erreur rôle contact",
+        "Erreur API CRM Role",
+        "Timeout contact-role API"
+    )
+    fun `should return failure CrmRoleResponsePayload when role fails`(failureMessage: String) {
+        val result = callPrivateMethodKotlin("failureCrmRoleResponsePayLoad", failureMessage)
+                as CrmRoleResponsePayload
+
+        assertEquals(RecordStepStatus.KO, result.crmStatus)
+        assertEquals(failureMessage, result.crmMessage)
+        assertNull(result.crmRoleId)
+    }
+}
