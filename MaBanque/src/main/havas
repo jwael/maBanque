@@ -1,0 +1,61 @@
+import io.mockk.*
+import org.junit.jupiter.api.*
+import org.junit.jupiter.api.extension.ExtendWith
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.LocalDate
+
+@ExtendWith(MockKExtension::class)
+class CrmRoleRequestTest {
+
+    // --- Common Mocks
+    private val reconciliationId = ReconciliationId("REF001")
+
+    @Nested
+    @DisplayName("CrmRoleData extensions tests")
+    inner class ToCrmCustomerRoleUpdateRequestTests {
+
+        @ParameterizedTest(name = "roleCode={0}, start={1}, end={2}, authorizedSignature={3}, mainContact={4}, relatedAccountId={5}")
+        @CsvSource(
+            "CUSTOMER, 2025-01-01, 2025-12-31, true, true, ACC123",
+            "ADMIN, 2025-02-01, 2025-11-30, false, false, ACC456"
+        )
+        fun `should convert CrmRoleData to CrmCustomerRoleUpdateRequest`(
+            roleCode: String,
+            start: String,
+            end: String,
+            authorizedSignature: Boolean,
+            mainContact: Boolean,
+            relatedAccountId: String
+        ) {
+            // GIVEN
+            val crmCustomerData = CrmData(
+                startDate = LocalDate.parse(start),
+                endDate = LocalDate.parse(end),
+                contactRole = roleCode,
+                authorizedSignature = authorizedSignature,
+                mainContact = mainContact,
+                salesforceAccountId = relatedAccountId
+            )
+
+            val roleData = CrmRoleData(
+                reconciliationId = reconciliationId,
+                batchId = "BATCH001",
+                rowNumber = 1,
+                crmCustomerData = crmCustomerData
+            )
+
+            // WHEN
+            val request = roleData.toCrmCustomerRoleUpdateRequest()
+
+            // THEN
+            Assertions.assertEquals(reconciliationId.print(), request.correlationId)
+            Assertions.assertEquals(roleCode, request.data.roleCode)
+            Assertions.assertEquals(start, request.data.startDate)
+            Assertions.assertEquals(end, request.data.endDate)
+            Assertions.assertEquals(authorizedSignature, request.data.authorizedSignature)
+            Assertions.assertEquals(mainContact, request.data.isMainContact)
+            Assertions.assertEquals(relatedAccountId, request.data.relatedAccountId)
+        }
+    }
+}
