@@ -1,0 +1,94 @@
+import io.mockk.*
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.*
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+
+class CrmRoleRequestMapperTest {
+
+    @Test
+    fun `should map CrmRoleData to CrmRoleRequest correctly`() {
+        // GIVEN
+        val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+
+        val crmCustomerData = mockk<CrmCustomerData> {
+            every { startDate } returns LocalDate.of(2024, 5, 1)
+            every { endDate } returns LocalDate.of(2025, 5, 1)
+            every { contactRole } returns "ADMIN"
+            every { kycType } returns "FULL"
+            every { authorizedSignature } returns true
+            every { salesforceAccountId } returns "SF-1234"
+            every { mainContact } returns true
+        }
+
+        val reconciliationId = mockk<ReconciliationId> {
+            every { print() } returns "RECON123"
+        }
+
+        val crmRoleData = CrmRoleData(
+            reconciliationId = reconciliationId,
+            batchId = "BATCH001",
+            rowNumber = 1,
+            crmCustomerData = crmCustomerData,
+            crmContactData = null
+        )
+
+        // WHEN
+        val result = crmRoleData.toCrmCustomerRoleRequest()
+
+        // THEN
+        assertEquals("RECON123", result.correlationId)
+        assertNotNull(result.data)
+        assertNotNull(result.data.roles)
+        assertEquals(1, result.data.roles!!.size)
+
+        val role = result.data.roles!![0]
+        assertEquals("2024-05-01", role.startDate)
+        assertEquals("2025-05-01", role.endDate)
+        assertEquals("ADMIN", role.roleCode)
+        assertEquals("FULL", role.kycType)
+        assertEquals(true, role.authorizedSignature)
+        assertEquals("SF-1234", role.relatedAccountId)
+        assertEquals(true, role.isMainContact)
+    }
+
+    @Test
+    fun `should handle null fields gracefully`() {
+        // GIVEN
+        val crmCustomerData = mockk<CrmCustomerData> {
+            every { startDate } returns null
+            every { endDate } returns null
+            every { contactRole } returns null
+            every { kycType } returns null
+            every { authorizedSignature } returns null
+            every { salesforceAccountId } returns null
+            every { mainContact } returns null
+        }
+
+        val reconciliationId = mockk<ReconciliationId> {
+            every { print() } returns "NULLCASE"
+        }
+
+        val crmRoleData = CrmRoleData(
+            reconciliationId = reconciliationId,
+            batchId = "BATCH002",
+            rowNumber = 2,
+            crmCustomerData = crmCustomerData,
+            crmContactData = null
+        )
+
+        // WHEN
+        val result = crmRoleData.toCrmCustomerRoleRequest()
+
+        // THEN
+        assertEquals("NULLCASE", result.correlationId)
+        val role = result.data.roles!!.first()
+        assertNull(role.startDate)
+        assertNull(role.endDate)
+        assertNull(role.roleCode)
+        assertNull(role.kycType)
+        assertNull(role.authorizedSignature)
+        assertNull(role.relatedAccountId)
+        assertNull(role.isMainContact)
+    }
+}
