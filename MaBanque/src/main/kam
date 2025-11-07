@@ -1,0 +1,72 @@
+@ExtendWith(MockKExtension::class)
+class CrmCustomerProviderAdaptorUpdateRoleReflectionTest {
+
+    private val crmClient: CrmClient = mockk(relaxed = true)
+    private val clockProvider: ClockProvider = mockk { every { now() } returns Instant.MIN }
+
+    private lateinit var adaptor: CrmCustomerProviderAdaptor
+
+    @BeforeEach
+    fun setup() {
+        adaptor = CrmCustomerProviderAdaptor(
+            crmClient = crmClient,
+            clockProvider = clockProvider
+        )
+    }
+
+    @ParameterizedTest(name = "updateCrmRole reflection test: {0}")
+    @CsvSource(
+        "OK,Role updated successfully",
+        "KO,Error updating role"
+    )
+    fun `should call updateCrmRole via reflection and handle response`(
+        status: String,
+        message: String
+    ) {
+        // GIVEN
+        val crmRoleData = CrmRoleData(
+            reconciliationId = ReconciliationId(ReferenceId("REF001")),
+            batchId = "BATCH001",
+            rowNumber = 1,
+            crmCustomerData = CrmData(
+                salesforceContactId = "CONTACT001",
+                salesforceRoleId = "ROLE001"
+            ),
+            crmContactData = null
+        )
+
+        val crmResponse = mockk<CrmRoleResponse>(relaxed = true)
+        every { crmResponse.toDomain() } returns CrmRoleResponsePayload(
+            crmStatus = if (status == "OK") RecordStepStatus.OK else RecordStepStatus.KO,
+            crmMessage = message,
+            crmRoleId = "ROLE001"
+        )
+
+        val responseMock = mockk<Response<CrmRoleResponse>>(relaxed = true)
+        every { responseMock.isSuccessful } returns true
+        every { responseMock.body() } returns crmResponse
+
+        every {
+            crmClient.updateRole(
+                correlationId = any(),
+                contactId = any(),
+                roleId = any(),
+                roleRequest = any()
+            ).execute()
+        } returns responseMock
+
+        // WHEN — appel via réflexion
+        val method = adaptor::class.java.getDeclaredMethod("updateCrmRole", CrmRoleData::class.java)
+        method.isAccessible = true
+        val result = method.invoke(adaptor, crmRoleData) as CrmRoleResponsePayload
+
+        // THEN
+        if (status == "OK") {
+            assertEquals(RecordStepStatus.OK, result.crmStatus)
+            assertEquals("Role updated successfully", result.crmMessage)
+        } else {
+            assertEquals(RecordStepStatus.KO, result.crmStatus)
+            assertEquals("Error updating role", result.crmMessage)
+        }
+    }
+}
