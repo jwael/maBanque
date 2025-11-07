@@ -1,0 +1,91 @@
+import io.mockk.*
+import org.junit.jupiter.api.*
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+@ExtendWith(MockKExtension::class)
+class CrmRoleDataMapperTest {
+
+    private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+
+    @Nested
+    @DisplayName("toCrmCustomerRoleUpdateRequest mapping")
+    inner class ToCrmCustomerRoleUpdateRequest {
+
+        @ParameterizedTest(name = "should map CrmCustomerData correctly for {0}")
+        @CsvSource(
+            "2024-06-01,2025-06-01,USER,PARTIAL,true,SF-123,true",
+            "2023-01-01,2023-12-31,ADMIN,FULL,false,SF-456,false"
+        )
+        fun `should map all fields correctly`(
+            start: String?,
+            end: String?,
+            roleCode: String?,
+            kycType: String?,
+            authorizedSignature: Boolean?,
+            relatedAccountId: String?,
+            isMainContact: Boolean?
+        ) {
+            // GIVEN
+            val crmCustomerData = mockk<CrmClsCustomerData>(relaxed = true) {
+                every { startDate } returns start?.let { LocalDate.parse(it) }
+                every { endDate } returns end?.let { LocalDate.parse(it) }
+                every { contactRole } returns roleCode
+                every { kycType } returns kycType
+                every { this.authorizedSignature } returns authorizedSignature
+                every { salesforceAccountId } returns relatedAccountId
+                every { mainContact } returns isMainContact
+            }
+
+            val crmRoleData = CrmRoleData(
+                reconciliationId = ReconciliationId(ReferenceId("BATCH001")),
+                batchId = "BATCH001",
+                rowNumber = 1,
+                crmCustomerData = crmCustomerData,
+                crmContactData = null
+            )
+
+            // WHEN
+            val result = crmRoleData.toCrmCustomerRoleUpdateRequest()
+
+            // THEN
+            assertEquals("BATCH001", result.correlationId)
+            assertEquals(start, result.data.startDate)
+            assertEquals(end, result.data.endDate)
+            assertEquals(roleCode, result.data.roleCode)
+            assertEquals(kycType, result.data.kycType)
+            assertEquals(authorizedSignature, result.data.authorizedSignature)
+            assertEquals(relatedAccountId, result.data.relatedAccountId)
+            assertEquals(isMainContact, result.data.isMainContact)
+        }
+
+        @Test
+        fun `should handle null crmCustomerData gracefully`() {
+            // GIVEN
+            val crmRoleData = CrmRoleData(
+                reconciliationId = ReconciliationId(ReferenceId("BATCH002")),
+                batchId = "BATCH002",
+                rowNumber = 2,
+                crmCustomerData = null,
+                crmContactData = null
+            )
+
+            // WHEN
+            val result = crmRoleData.toCrmCustomerRoleUpdateRequest()
+
+            // THEN
+            assertEquals("BATCH002", result.correlationId)
+            assertNull(result.data.startDate)
+            assertNull(result.data.endDate)
+            assertNull(result.data.roleCode)
+            assertNull(result.data.kycType)
+            assertNull(result.data.authorizedSignature)
+            assertNull(result.data.relatedAccountId)
+            assertNull(result.data.isMainContact)
+        }
+    }
+}
