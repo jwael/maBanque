@@ -1,0 +1,98 @@
+class CrmContactProviderAdapterCreateCrmRoleTest {
+
+    private val crmClient: CrmClient = mockk()
+    private val crmContactProviderAdapter = spyk(CrmContactProviderAdapter(crmClient))
+
+    @Test
+    fun `should return OK when CRM role creation is successful`() {
+        // given
+        val crmRoleData = mockk<CrmRoleData>(relaxed = true)
+        val crmRoleRequest = mockk<CrmRoleRequestData>()
+        val crmResponse = mockk<Response<RolesResponse>>()
+        val call = mockk<Call<RolesResponse>>()
+        val rolesResponse = RolesResponse(
+            roles = listOf(
+                CrmRole(
+                    startDate = "2025-01-01",
+                    endDate = "2025-12-31",
+                    roleCode = "SIGNATORY",
+                    accountExternalCode = "ACC001",
+                    isMainContact = true
+                )
+            )
+        )
+
+        every { crmRoleData.toCrmContactRoleRequest } returns crmRoleRequest
+        every {
+            crmClient.createRole(
+                correlationId = any(),
+                contactId = any(),
+                roleRequest = any()
+            )
+        } returns call
+
+        every { call.execute() } returns crmResponse
+        every { crmResponse.isSuccessful } returns true
+        every { crmResponse.body() } returns rolesResponse
+
+        // when
+        val result = crmContactProviderAdapter.createCrmRole(crmRoleData)
+
+        // then
+        assertEquals(RecordStepStatus.OK, result.crmStatus)
+        assertNull(result.crmMessage)
+        assertNull(result.crmRoleId) // dépend de ton mapping .toDomain()
+    }
+
+    @Test
+    fun `should return KO when CRM role creation fails`() {
+        // given
+        val crmRoleData = mockk<CrmRoleData>(relaxed = true)
+        val crmRoleRequest = mockk<CrmRoleRequestData>()
+        val crmResponse = mockk<Response<RolesResponse>>()
+        val call = mockk<Call<RolesResponse>>()
+
+        every { crmRoleData.toCrmContactRoleRequest } returns crmRoleRequest
+        every {
+            crmClient.createRole(
+                correlationId = any(),
+                contactId = any(),
+                roleRequest = any()
+            )
+        } returns call
+
+        every { call.execute() } returns crmResponse
+        every { crmResponse.isSuccessful } returns false
+        every { crmResponse.errorBody()?.charStream()?.readText() } returns "error from CRM"
+
+        // when
+        val result = crmContactProviderAdapter.createCrmRole(crmRoleData)
+
+        // then
+        assertEquals(RecordStepStatus.KO, result.crmStatus)
+        assertTrue(result.crmMessage!!.contains("error from CRM"))
+    }
+
+    @Test
+    fun `should handle exception and return KO`() {
+        // given
+        val crmRoleData = mockk<CrmRoleData>(relaxed = true)
+        val crmRoleRequest = mockk<CrmRoleRequestData>()
+
+        every { crmRoleData.toCrmContactRoleRequest } returns crmRoleRequest
+        every {
+            crmClient.createRole(
+                correlationId = any(),
+                contactId = any(),
+                roleRequest = any()
+            )
+        } throws RuntimeException("network error")
+
+        // when
+        val result = crmContactProviderAdapter.createCrmRole(crmRoleData)
+
+        // then
+        assertEquals(RecordStepStatus.KO, result.crmStatus)
+        assertTrue(result.crmMessage!!.contains("network error"))
+    }
+}
