@@ -1,0 +1,104 @@
+@ExtendWith(MockKExtension::class)
+class CrmContactProviderAdapterTest {
+
+    // --- Mocks
+    private val crmClient: CrmApiClient = mockk(relaxed = true)
+    private val logger: Logger = mockk(relaxed = true)
+
+    // --- Service
+    private lateinit var crmContactProviderAdapter: CrmContactProviderAdapter
+
+    @BeforeEach
+    fun setup() {
+        crmContactProviderAdapter = spyk(
+            CrmContactProviderAdapter(crmClient),
+            recordPrivateCalls = true
+        )
+    }
+
+    @Nested
+    @DisplayName("createCrmRole - Use Cases")
+    inner class CreateCrmRoleTests {
+
+        @ParameterizedTest(name = "Test role creation: start={0}, end={1}, code={2}")
+        @CsvSource(
+            "2025-01-01, 2025-12-31, SIGNATORY",
+            "2025-02-01, 2025-12-31, AUTHORIZED"
+        )
+        fun `should create CRM role successfully`(
+            startDate: String,
+            endDate: String,
+            roleCode: String
+        ) {
+            // --- GIVEN
+            val crmContactData = mockk<CrmData>(relaxed = true) {
+                every { this@mockk.startDate } returns LocalDate.parse(startDate)
+                every { this@mockk.endDate } returns LocalDate.parse(endDate)
+                every { this@mockk.contactRole } returns roleCode
+                every { this@mockk.roleClsCompanyCode } returns "ACC001"
+                every { this@mockk.companyCode } returns "COMP001"
+                every { this@mockk.sfRelatedAccount } returns "REL001"
+                every { this@mockk.mainContact } returns true
+            }
+
+            val crmRoleData = CrmRoleData(
+                reconciliationId = ReconciliationId(ReferenceId("REF0001")),
+                batchId = "BATCH001",
+                rowNumber = 1,
+                crmContactData = crmContactData
+            )
+
+            val rolesResponse = RolesResponse(
+                roles = listOf(
+                    RoleResponse(
+                        startDate = startDate,
+                        endDate = endDate,
+                        roleCode = roleCode,
+                        accountExternalCode = "ACC001",
+                        relatedAccountExternalId = "COMP001",
+                        relatedAccountId = "REL001",
+                        isMainContact = true,
+                        kycType = null,
+                        authorizedSignature = null
+                    )
+                )
+            )
+
+            val crmResponse: Call<RolesResponse> = mockk(relaxed = true)
+            every { crmClient.createRole(any(), any(), any()) } returns crmResponse
+            every { crmResponse.execute() } returns Response.success(rolesResponse)
+
+            // --- WHEN
+            val result = crmContactProviderAdapter.createCrmRole(crmRoleData)
+
+            // --- THEN
+            assertNotNull(result)
+            assertEquals(RecordStepStatus.OK, result.crmStatus)
+            assertEquals(roleCode, result.crmMessage ?: roleCode) // si tu mappe message
+            verify { crmClient.createRole(any(), eq("REL001"), any()) }
+        }
+
+        @Test
+        fun `should return failure payload when CRM API fails`() {
+            // GIVEN
+            val crmRoleData = CrmRoleData(
+                reconciliationId = ReconciliationId(ReferenceId("REF0001")),
+                batchId = "BATCH001",
+                rowNumber = 1,
+                crmContactData = mockk(relaxed = true)
+            )
+
+            val crmResponse: Call<RolesResponse> = mockk(relaxed = true)
+            every { crmClient.createRole(any(), any(), any()) } returns crmResponse
+            every { crmResponse.execute() } throws RuntimeException("CRM down")
+
+            // WHEN
+            val result = crmContactProviderAdapter.createCrmRole(crmRoleData)
+
+            // THEN
+            assertNotNull(result)
+            assertEquals(RecordStepStatus.KO, result.crmStatus)
+            assertTrue(result.crmMessage?.contains("CRM down") == true)
+        }
+    }
+}
