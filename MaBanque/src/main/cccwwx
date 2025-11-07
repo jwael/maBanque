@@ -1,0 +1,148 @@
+## **🌟 BEGINNER VERSION (PO/Non-Technical)**
+
+### **🎯 What This Application Does**
+Imagine you work in a company that receives a daily list of new customers to register in the system. This application **automatically does all the work**:
+
+1. **It takes the customer list** (like an Excel file)
+2. **Registers them in the internal system**
+3. **Adds them to the customer management software** (CRM)
+4. **Assigns the right roles** to each person
+5. **Notifies all other departments** when the work is done
+
+### **🔄 How It Works**
+**It's like an assembly line:**
+- 📥 **Input**: A file with all new customers
+- ⚙️ **Step 1**: Registration in the internal system
+- ⚙️ **Step 2**: Creation in the management software
+- ⚙️ **Step 3**: Role assignment
+- 📤 **Output**: Everyone is notified when complete
+
+### **🛡️ What If Something Goes Wrong?**
+The application **keeps track of everything**:
+- ✅ What worked
+- ❌ What failed
+- 📝 Why it failed
+
+### **🏢 B2B vs B2C: The Difference**
+- **👥 B2C (Business to Consumer)**:
+  - Customers = **individual people**
+  - Example: Selling products to consumers
+  - Simple data: name, address, email
+
+- **🏢 B2B (Business to Business)**:
+  - Customers = **other companies**
+  - Example: Selling equipment to other businesses
+  - Complex data: company, department, multiple contacts, roles
+
+**In our application:**
+- For **B2C**: We mainly manage individual people
+- For **B2B**: We must manage **company + contacts + their roles** (manager, buyer, etc.)
+
+---
+
+## **💻 TECHNICAL VERSION**
+
+### **🎯 Architectural Purpose**
+Batch integration and synchronization system between internal CLS (Customer Lifecycle System) and external CRM (Salesforce), with **business step orchestration**, **role management**, and **event-driven architecture** via Kafka.
+
+### **🛠️ Technical Stack**
+- **Backend**: Asynchronous batch processing
+- **Persistence**: CLS database + RecordStepEvent for audit
+- **Integrations**: CRM Provider SPI, Kafka Event Bus
+- **Monitoring**: Step tracking, error logging, metrics
+
+### **🔧 Processing Pipeline**
+
+#### **1. Ingestion & Validation**
+```java
+// Input payload
+BatchCustomerRequest {
+    List<PersonalAccount> personalAccounts,
+    String batchReference,
+    String countryCode
+}
+```
+
+#### **2. Processing Flow**
+```
+1. CLS Registration
+   └── crmClsCustomerDataRepositorySpi.save()
+   └── RecordStepEventRepositorySpi.save(CLS_STEP)
+
+2. CRM Synchronization
+   ├── CREATE: crmCustomerProviderSpi.createCrmCustomer()
+   ├── UPDATE: crmCustomerProviderSpi.updateCrmCustomer()
+   └── RecordStepEventRepositorySpi.save(CRM_STEP)
+
+3. Role Management
+   ├── Conditional: isCreateRole → createCrmRole()
+   ├── Conditional: isUpdateRole → updateCrmRole()
+   └── RecordStepEventRepositorySpi.save(ROLE_STEP)
+
+4. Event Propagation
+   └── KafkaProducer.send(CustomerEvent)
+```
+
+#### **3. Error Handling & Audit**
+- **Circuit breaker** for external calls
+- **Dead Letter Queue** for Kafka messages
+- **RecordStepEvent** with status (SUCCESS/ERROR) + errorMessage
+
+### **🏢 B2B vs B2C: Technical Implications**
+
+#### **📊 Data Model**
+```java
+// B2C - Simple
+class PersonalAccount {
+    String firstName;
+    String lastName;
+    String email;
+}
+
+// B2B - Complex
+class BusinessAccount {
+    String companyName;
+    String taxId;
+    List<Contact> contacts; // Multiple roles
+    Address billingAddress;
+}
+```
+
+#### **🔗 Integration Patterns**
+- **B2C**:
+  - Direct CRM mapping: personalAccount → Salesforce Contact
+  - Simple workflow: creation → validation → notification
+
+- **B2B**:
+  - **Double mapping**: Account + Contact + Role objects
+  - **Complex relationships**: hierarchy, decision makers
+  - **Conditional workflow**: based on company size, industry sector
+
+#### **⚡ Performance Considerations**
+- **B2C**: High volume, massively parallel processing
+- **B2B**: Moderate volume but relational complexity, requires distributed transactions
+
+### **📈 Monitoring & Observability**
+- **Metrics**: success/failure rates per step
+- **Traces**: correlationId across CLS → CRM → Kafka
+- **Alerting**: error thresholds on critical steps
+
+---
+
+## **🎯 Key B2B/B2C Differences in the Application**
+
+| Aspect | B2C (Consumer) | B2B (Business) |
+|--------|----------------|----------------|
+| **Volume** | High volume, simple data | Moderate volume, complex data |
+| **Relationships** | 1:1 relationship (customer) | Multiple relationships (company + contacts + roles) |
+| **Workflow** | Linear and standardized | Conditional and customized |
+| **Data** | Consumer profile | Organizational structure |
+| **Integration** | Direct mapping | Multiple hierarchical mapping |
+
+**The application must therefore be configurable** to support both modes based on the `countryCode` and type of `personalAccount` received.
+
+---
+
+## **🚀 Summary**
+**In one sentence**:  
+*A batch pipeline that ingests customers, synchronizes them between CLS and CRM, manages their roles, and notifies the ecosystem via Kafka, all while being traceable and auditable.*
