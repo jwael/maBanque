@@ -1,0 +1,77 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import retrofit2.Call
+import retrofit2.Response
+import kotlin.test.assertEquals
+
+class CrmCustomerProviderAdaptorTest {
+
+    private val crmClient: CrmClient = mockk()
+    private lateinit var adaptor: CrmCustomerProviderAdaptor
+
+    @BeforeEach
+    fun setup() {
+        adaptor = CrmCustomerProviderAdaptor(crmClient)
+        mockkStatic(CountryCode::class)
+        every { CountryCode.getISCodeByCountryName(any()) } returns "FR"
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "CUST001,BATCH001,1,ROW001,John,Doe,Customer,ACC123,Customer created",
+        "CUST002,BATCH002,2,ROW002,Jane,Doe,Customer,ACC456,Customer created"
+    )
+    fun `createCrmCustomer should return OK response for multiple customers`(
+        id: String,
+        batchId: String,
+        rowNumber: Int,
+        rowReference: String,
+        firstName: String,
+        surname: String,
+        contactRole: String,
+        expectedAccountId: String,
+        expectedMessage: String
+    ) {
+        // GIVEN
+        val crmData = CrmData(
+            firstName = firstName,
+            surname = surname,
+            mainCountry = "FRANCE",
+            contactRole = contactRole
+        )
+
+        val crmClsCustomerData = CrmClsCustomerData(
+            id = id,
+            batchId = batchId,
+            rowNumber = rowNumber,
+            rowReference = ReferenceId(rowReference),
+            crmCustomerData = crmData,
+            clsData = emptyMap(),
+            crmInsertedId = null,
+            reconciliationId = ReconciliationId(ReferenceId("REF0000001"))
+        )
+
+        val crmResponse = CrmCustomerResponse(
+            accountId = expectedAccountId,
+            message = expectedMessage,
+            status = "SUCCESS",
+            roles = emptyList()
+        )
+
+        val call: Call<CrmCustomerResponse> = mockk()
+        every { crmClient.createCustomer(any(), any()) } returns call
+        every { call.execute() } returns Response.success(crmResponse)
+
+        // WHEN
+        val result = adaptor.createCrmCustomer(crmClsCustomerData)
+
+        // THEN
+        assertEquals(expectedAccountId, result.crmAccountId)
+        assertEquals(expectedMessage, result.crmMessage)
+        assertEquals(RecordStepStatus.OK, result.crmStatus)
+
+        verify { crmClient.createCustomer(any(), any()) }
+    }
+}
