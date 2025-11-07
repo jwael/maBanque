@@ -1,0 +1,93 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import retrofit2.Call
+import retrofit2.Response
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import kotlin.test.assertEquals
+
+class CrmCustomerProviderAdaptorTest {
+
+    private val crmClient: CrmClient = mockk()
+    private lateinit var adaptor: CrmCustomerProviderAdaptor
+
+    @BeforeEach
+    fun setup() {
+        adaptor = CrmCustomerProviderAdaptor(crmClient)
+        mockkStatic(CountryCode::class)
+        every { CountryCode.getISCodeByCountryName(any()) } returns "FR"
+    }
+
+    @Test
+    fun `createCrmCustomer should return OK response when crmClient succeeds`() {
+        // GIVEN
+        val crmData = CrmData(
+            firstName = "John",
+            surname = "Doe",
+            mainCountry = "FRANCE",
+            contactRole = "Customer"
+        )
+
+        val crmClsCustomerData = CrmClsCustomerData(
+            id = "CUST001",
+            batchId = "BATCH001",
+            reconciliationId = ReconciliationId("REF001"),
+            rowNumber = 1,
+            rowReference = ReferenceId("ROW001"),
+            crmbata = CrmData(),
+            crmCustomerData = crmData,
+            clsData = emptyMap(),
+            crmInsertedId = null
+        )
+
+        val crmResponse = CrmCustomerResponse(
+            crmAccountId = "ACC123",
+            message = "Customer created",
+            success = true
+        )
+
+        val call: Call<CrmCustomerResponse> = mockk()
+        every { crmClient.createCustomer(any(), any()) } returns call
+        every { call.execute() } returns Response.success(crmResponse)
+
+        // WHEN
+        val result = adaptor.createCrmCustomer(crmClsCustomerData)
+
+        // THEN
+        assertEquals("ACC123", result.crmAccountId)
+        assertEquals("Customer created", result.crmMessage)
+        assertEquals(RecordStepStatus.OK, result.crmStatus)
+
+        verify { crmClient.createCustomer(any(), any()) }
+    }
+
+    @Test
+    fun `createCrmCustomer should return KO response when crmClient fails`() {
+        // GIVEN
+        val crmClsCustomerData = CrmClsCustomerData(
+            id = "CUST002",
+            batchId = "BATCH002",
+            reconciliationId = ReconciliationId("REF002"),
+            rowNumber = 2,
+            rowReference = ReferenceId("ROW002"),
+            crmbata = CrmData(),
+            crmCustomerData = CrmData(firstName = "Jane", surname = "Doe", mainCountry = "FRANCE"),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        )
+
+        val call: Call<CrmCustomerResponse> = mockk()
+        every { crmClient.createCustomer(any(), any()) } returns call
+        every { call.execute() } throws RuntimeException("API failure")
+
+        // WHEN
+        val result = adaptor.createCrmCustomer(crmClsCustomerData)
+
+        // THEN
+        assertEquals(RecordStepStatus.KO, result.crmStatus)
+        assert(result.crmMessage!!.contains("BLM Exception"))
+
+        verify { crmClient.createCustomer(any(), any()) }
+    }
+}
