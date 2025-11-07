@@ -1,0 +1,64 @@
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.LocalDate
+import kotlin.test.assertEquals
+
+class CrmRoleDataTest {
+
+    // --- Nested class pour organiser les tests
+    @Nested
+    inner class ToCrmCustomerRoleUpdateRequestTests {
+
+        @ParameterizedTest(name = "start={0}, end={1}, role={2}, kyc={3}, authorized={4}, relatedId={5}, main={6}")
+        @CsvSource(
+            "2025-01-01,2025-12-31,Customer,KYC1,true,EXT123,true",
+            "2025-02-01,2025-11-30,Manager,KYC2,false,EXT456,false"
+        )
+        fun `should map CrmRoleData to CrmCustomerRoleUpdateRequest correctly`(
+            start: String?,
+            end: String?,
+            roleCode: String?,
+            kycType: String?,
+            authorizedSignature: Boolean?,
+            relatedAccountId: String?,
+            isMainContact: Boolean?
+        ) {
+            // GIVEN : mock des données CRM
+            val crmDataMock = mockk<CrmData>(relaxed = true) {
+                every { startDate } returns start?.let { LocalDate.parse(it) }
+                every { endDate } returns end?.let { LocalDate.parse(it) }
+                every { contactRole } returns roleCode
+                every { this@mockk.kycType } returns kycType
+                every { this@mockk.authorizedSignature } returns authorizedSignature
+                every { salesforceAccountId } returns relatedAccountId
+                every { mainContact } returns isMainContact
+            }
+
+            val crmCustomerDataMock = mockk<CrmClsCustomerData>(relaxed = true) {
+                every { crmData } returns crmDataMock
+            }
+
+            val roleData = CrmRoleData(
+                reconciliationId = ReconciliationId("REF001"),
+                crmCustomerData = crmCustomerDataMock
+            )
+
+            // WHEN : appel de la fonction à tester
+            val result = roleData.toCrmCustomerRoleUpdateRequest()
+
+            // THEN : assertions sur le mapping
+            assertEquals("REF001", result.correlationId)
+            assertEquals(roleCode, result.data.roleCode)
+            assertEquals(kycType, result.data.kycType)
+            assertEquals(authorizedSignature, result.data.authorizedSignature)
+            assertEquals(relatedAccountId, result.data.relatedAccountId)
+            assertEquals(isMainContact, result.data.isMainContact)
+            assertEquals(start?.let { LocalDate.parse(it).format(CrmContactRequest.dateFormatter) }, result.data.startDate)
+            assertEquals(end?.let { LocalDate.parse(it).format(CrmContactRequest.dateFormatter) }, result.data.endDate)
+        }
+    }
+}
