@@ -1,0 +1,34 @@
+@Test
+fun `should return success payload when CRM call succeeds`() {
+    // GIVEN
+    val crmData = mockk<CrmClsCustomerData>(relaxed = true)
+    val crmRequest = mockk<CrmCustomerRequest>()
+    every { crmData.toCrmCustomerRequest(isCrmUpdate = false) } returns crmRequest
+
+    // Mock du Call Retrofit
+    val crmCall = mockk<Call<CrmCustomerResponse>>()
+    val crmResponse = mockk<Response<CrmCustomerResponse>>()
+    every { crmResponse.isSuccessful } returns true
+    val responseBody = mockk<CrmCustomerResponse>()
+    every { crmResponse.body() } returns responseBody
+    every { responseBody.toDomain() } returns CrmCustomerResponsePayload(
+        crmStatus = RecordStepStatus.OK,
+        crmMessage = "Created",
+        crmAccountId = "ACC123",
+        crmRoleId = null
+    )
+
+    // Quand createCustomer est appelé, retourne le Call mocké
+    every { crmClient.createCustomer(any(), any()) } returns crmCall
+    every { crmCall.execute() } returns crmResponse
+
+    // WHEN
+    val result = provider.createCrmCustomer(crmData)
+
+    // THEN
+    assertEquals(RecordStepStatus.OK, result.crmStatus)
+    assertEquals("ACC123", result.crmAccountId)
+    verify { crmData.toCrmCustomerRequest(false) }
+    verify { crmClient.createCustomer(any(), any()) }
+    verify { crmCall.execute() }
+}
