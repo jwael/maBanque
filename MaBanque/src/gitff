@@ -1,0 +1,90 @@
+# **BLM Project - Git Flow & Deployment Guide**
+
+## **🚀 Overview**
+The Bulk Loader Module (BLM) project uses modern CI/CD practices with Jenkins pipelines and Kubernetes deployment via Helm.
+
+## **🛠️ CI/CD Infrastructure**
+
+### **Jenkins Pipelines**
+- **Primary Pipeline**: [Build and Deploy Pipeline](https://Lienkinsbuild.intra.corp/jenkins/job/E3/job/CRMX20Bulk%20Loader%20Module/job/backend-build/)
+- **Automated Triggers**:
+  - `main` branch → **Automatic deployment**
+  - Feature branches → **Manual deployment required**
+- **Manual Options**: Build and deploy available for specific branches
+
+### **Deployment Tools**
+- **Helm**: Kubernetes manifest management
+- **Kubernetes**: Container orchestration
+- **Manifest Location**: Located in source code project
+
+## **📋 Release Management**
+
+### **Tag-based Releases**
+```bash
+# Staging Environment
+git tag vX.X.X-rc
+git push origin vX.X.X-rc
+
+# Production Environment  
+git tag vX.X.X
+git push origin vX.X.X
+```
+
+### **Release Process**
+1. **Create Git Tag** (as shown above)
+2. **Pipeline automatically detects** and deploys to corresponding environment
+
+## **📝 Deployment Documentation Process**
+
+### **Step 1: Create Confluence Release Page**
+- **Template**: [BLM - Releases](...)
+- **Required Information**:
+  - API version (use commit ID without last 4 characters)
+  - Example: Commit `5d524b43f85` → Version `5d524b4`
+
+### **Step 2: Create JIRA Ticket**
+- **Platform**: [INTRA - DCAPSI](...)
+- **Integration**: Add JIRA URL to Confluence page under **Change Request Table**
+
+## **⚠️ Important Change Management Notes**
+
+### **Emergency Changes**
+- **Requirement**: Must have linked **INCxxx** incident number
+- **No INC = Not considered emergency**
+- **Deadline**: Notify team **before 4 PM** on delivery day
+
+### **Normal Changes**
+| Risk Level | Deadline | CAB Requirement |
+|------------|----------|-----------------|
+| **Low-risk** | Tuesday 9 AM CET | Assess status required |
+| **Moderate-risk** | Monday 9 AM CET | Assess status required |
+
+**Planned Start Window**: Thursday 12 AM - Wednesday 21:59 PM
+
+## **🌐 Environment URLs**
+
+### **LAB Environment**
+- **API**: `https://blm.lab.dcx.intra.comp/api/*`
+- **Swagger Documentation**: `https://blm.lab.dcx.intra.comp/api/springdoc/swagger-ui/index.html`
+- **Web Application**: `https://blm.lab.dcx.intra.comp`
+
+## **🔧 Quick Reference**
+
+### **For Developers**
+```bash
+# Create staging release
+git tag v1.2.3-rc && git push origin v1.2.3-rc
+
+# Create production release  
+git tag v1.2.3 && git push origin v1.2.3
+```
+
+### **For Deployment Managers**
+1. Check pipeline: [Jenkins Build](https://Lienkinsbuild.intra.corp/jenkins/job/E3/job/CRMX20Bulk%20Loader%20Module/job/backend-build/)
+2. Document in Confluence
+3. Create JIRA ticket
+4. Follow change management deadlines
+
+---
+
+**📚 Additional Resources**: [Jenkins Tanzu Pipeline Documentation](https://confluence.group.echonet/display/AE3/Jenkins+Tanzu+Pipeline)
