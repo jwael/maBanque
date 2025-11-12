@@ -1,0 +1,93 @@
+package com.arval.blm.infrastructure.driving.rest.common
+
+import com.arval.blm.infrastructure.driving.rest.caixa.CaixaCsvDto
+import com.arval.blm.infrastructure.driving.rest.caixa.CaixaCsvDto.Companion.mapToCustomerPayload
+import com.arval.blm.infrastructure.driving.rest.caixa.CsvErrorRegistry
+import com.univocity.parsers.csv.CsvToBeanBuilder
+import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.io.StringReader
+import java.nio.charset.StandardCharsets
+import org.mozilla.universalchardet.UniversalDetector
+
+object OpenCsvUtils {
+
+    /**
+     * Convertit le MultipartFile en InputStreamReader UTF-8, en détectant l'encodage
+     */
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        val fileBytes = file.bytes
+        val detectedEncoding = detectEncoding(fileBytes)
+        val utf8Bytes = if (detectedEncoding.equals("UTF-8", ignoreCase = true)) {
+            fileBytes
+        } else {
+            convertToUtf8(file, originalEncoding = detectedEncoding)
+        }
+        return InputStreamReader(ByteArrayInputStream(utf8Bytes), StandardCharsets.UTF_8)
+    }
+
+    /**
+     * Vérifie si le fichier n'est pas au format CSV
+     */
+    fun hasNotCsvFormat(file: MultipartFile) = file.contentType != "text/csv"
+
+    /**
+     * Détecte l'encodage du fichier avec UniversalDetector
+     */
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        val detector = UniversalDetector(null)
+        detector.handleData(fileBytes, 0, fileBytes.size)
+        detector.dataEnd()
+        val detected = detector.detectedCharset
+        return detected ?: "UTF-8"
+    }
+
+    /**
+     * Convertit le fichier en UTF-8 à partir d'un encodage original
+     */
+    private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+        return String(file.bytes, charset(originalEncoding)).toByteArray(StandardCharsets.UTF_8)
+    }
+
+    /**
+     * Nettoie les lignes CSV en supprimant les lignes vides et le BOM éventuel
+     */
+    fun cleanCsvLines(lines: List<String>): List<String> {
+        if (lines.isEmpty()) return lines
+        return lines.mapIndexed { index, line ->
+            if (index == 0) line.trimStart('\uFEFF') else line // supprime BOM sur la première ligne
+        }.filter { it.isNotBlank() } // supprime lignes vides
+    }
+
+    /**
+     * Parse un fichier CSV en liste de CustomerPayload
+     */
+    fun parse(file: MultipartFile): List<CustomerPayLoad> {
+        val reader = toUtf8Reader(file)
+        val allLines = reader.readLines()
+        if (allLines.isEmpty()) return emptyList()
+
+        val cleanedLines = cleanCsvLines(allLines)
+        val header = cleanedLines.first()
+        val dataLines = cleanedLines.drop(1)
+
+        return dataLines.mapIndexed { index, line ->
+            val lineReader = StringReader("$header\n$line")
+            val dto = CsvToBeanBuilder<CaixaCsvDto>(lineReader)
+                .withType(CaixaCsvDto::class.java)
+                .withSeparator(';')
+                .withIgnoreLeadingWhiteSpace(true)
+                .build()
+                .parse()
+                .firstOrNull() ?: throw IllegalArgumentException("Empty line or parsing failed")
+
+            val errors = CsvErrorRegistry.getAndClear()
+            val dtoWithErrors = if (errors.isNotEmpty()) {
+                dto.copy(errorMessage = errors.joinToString(" "))
+            } else dto
+
+            dtoWithErrors.mapToCustomerPayload(rowNumber = index + 1)
+        }
+    }
+}
