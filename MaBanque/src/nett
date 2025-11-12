@@ -1,0 +1,47 @@
+import org.apache.commons.io.input.BOMInputStream
+import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
+import org.mozilla.universalchardet.UniversalDetector
+
+object OpenCsvUtils {
+
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        val fileBytes = file.bytes
+        val detectedEncoding = detectEncoding(fileBytes)
+        println("Detected encoding: $detectedEncoding") // debug
+
+        val utf8Bytes = if (detectedEncoding.equals("UTF-8", ignoreCase = true)) {
+            fileBytes
+        } else {
+            convertToUtf8(fileBytes, detectedEncoding)
+        }
+
+        // BOMInputStream supprime le BOM éventuel en début de fichier
+        val cleanInputStream = BOMInputStream(ByteArrayInputStream(utf8Bytes))
+
+        return InputStreamReader(cleanInputStream, StandardCharsets.UTF_8)
+    }
+
+    fun hasNotCsvFormat(file: MultipartFile) = file.contentType != "text/csv"
+
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        val detector = UniversalDetector(null)
+        detector.handleData(fileBytes, 0, fileBytes.size)
+        detector.dataEnd()
+        return detector.detectedCharset ?: "ISO-8859-1" // fallback si null
+    }
+
+    private fun convertToUtf8(fileBytes: ByteArray, originalEncoding: String): ByteArray {
+        return String(fileBytes, charset(originalEncoding)).toByteArray(StandardCharsets.UTF_8)
+    }
+
+    /**
+     * Nettoyage simple des lignes ajoutées par Excel (BOM + lignes vides)
+     */
+    fun cleanCsvLines(lines: List<String>): List<String> {
+        return lines.filter { it.isNotBlank() }
+            .map { it.trimStart('\uFEFF') } // supprime BOM si présent
+    }
+}
