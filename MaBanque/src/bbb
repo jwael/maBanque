@@ -1,0 +1,95 @@
+package com.arval.blm.infrastructure.driving.rest.common
+
+import com.arval.blm.infrastructure.driving.rest.caixa.CaixaCsvDto
+import com.arval.blm.infrastructure.driving.rest.caixa.CaixaCsvDto.Companion.mapToCustomerPayload
+import com.arval.blm.infrastructure.driving.rest.caixa.CsvErrorRegistry
+import com.univocity.parsers.csv.CsvToBeanBuilder
+import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.io.StringReader
+import java.nio.charset.StandardCharsets
+import org.mozilla.universalchardet.UniversalDetector
+
+object OpenCsvUtils {
+
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        val fileBytes = file.bytes
+        val detectedEncoding = detectEncoding(fileBytes)
+        println("Detected encoding: $detectedEncoding")  // DEBUG
+
+        val utf8Bytes = if (detectedEncoding.equals("UTF-8", ignoreCase = true)) {
+            fileBytes
+        } else {
+            convertToUtf8(file, originalEncoding = detectedEncoding)
+        }
+
+        println("Byte size before UTF-8 conversion: ${fileBytes.size}, after conversion: ${utf8Bytes.size}") // DEBUG
+        return InputStreamReader(ByteArrayInputStream(utf8Bytes), StandardCharsets.UTF_8)
+    }
+
+    fun hasNotCsvFormat(file: MultipartFile) = file.contentType != "text/csv"
+
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        val detector = UniversalDetector(null)
+        detector.handleData(fileBytes, 0, fileBytes.size)
+        detector.dataEnd()
+        val detected = detector.detectedCharset
+        println("UniversalDetector detected charset: $detected")  // DEBUG
+        return detected ?: "UTF-8"
+    }
+
+    private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+        println("Converting file from $originalEncoding to UTF-8")  // DEBUG
+        return String(file.bytes, charset(originalEncoding)).toByteArray(StandardCharsets.UTF_8)
+    }
+
+    fun cleanCsvLines(lines: List<String>): List<String> {
+        println("Cleaning CSV lines: original line count = ${lines.size}")  // DEBUG
+        if (lines.isEmpty()) return lines
+        return lines.mapIndexed { index, line ->
+            val cleaned = if (index == 0) line.trimStart('\uFEFF') else line
+            println("Line ${index + 1} after BOM trim: $cleaned")  // DEBUG
+            cleaned
+        }.filter { it.isNotBlank() }.also {
+            println("Line count after removing empty lines: ${it.size}")  // DEBUG
+        }
+    }
+
+    fun parse(file: MultipartFile): List<CustomerPayLoad> {
+        println("Parsing CSV file: ${file.originalFilename}")  // DEBUG
+        val reader = toUtf8Reader(file)
+        val allLines = reader.readLines()
+        println("Total lines read from file: ${allLines.size}")  // DEBUG
+        if (allLines.isEmpty()) return emptyList()
+
+        val cleanedLines = cleanCsvLines(allLines)
+        val header = cleanedLines.first()
+        val dataLines = cleanedLines.drop(1)
+        println("Header: $header")  // DEBUG
+        println("Data lines count: ${dataLines.size}")  // DEBUG
+
+        return dataLines.mapIndexed { index, line ->
+            println("Parsing line ${index + 1}: $line")  // DEBUG
+            val lineReader = StringReader("$header\n$line")
+            val dto = CsvToBeanBuilder<CaixaCsvDto>(lineReader)
+                .withType(CaixaCsvDto::class.java)
+                .withSeparator(';')
+                .withIgnoreLeadingWhiteSpace(true)
+                .build()
+                .parse()
+                .firstOrNull() ?: run {
+                    println("Failed to parse line ${index + 1}")  // DEBUG
+                    throw IllegalArgumentException("Empty line or parsing failed")
+                }
+
+            val errors = CsvErrorRegistry.getAndClear()
+            val dtoWithErrors = if (errors.isNotEmpty()) {
+                println("Errors found in line ${index + 1}: ${errors.joinToString()}")  // DEBUG
+                dto.copy(errorMessage = errors.joinToString(" "))
+            } else dto
+
+            dtoWithErrors.mapToCustomerPayload(rowNumber = index + 1)
+        }
+    }
+}
