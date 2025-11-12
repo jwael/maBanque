@@ -1,0 +1,66 @@
+package com.arval.blm.infrastructure.driving.rest.common
+
+import org.apache.commons.fileupload.MultipartStream
+import org.mozilla.universalchardet.UniversalDetector
+import org.springframework.web.multipart.MultipartFile
+import java.io.*
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
+
+object OpenCsvUtils {
+
+    /**
+     * Convertit un fichier MultipartFile en InputStreamReader UTF-8,
+     * en détectant l'encodage ou en forçant UTF-8 si null.
+     */
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        val fileBytes = file.bytes
+        val detectedEncoding = detectEncoding(fileBytes)
+        println("UniversalDetector detected charset: $detectedEncoding")
+
+        val encodingToUse = detectedEncoding ?: "UTF-8"
+        println("Detected encoding: $encodingToUse")
+
+        val utf8Bytes = if (encodingToUse.uppercase() == "UTF-8") {
+            file.bytes
+        } else {
+            println("Converting file from $encodingToUse to UTF-8")
+            convertToUtf8(file, originalEncoding = encodingToUse)
+        }
+
+        println("Byte size before UTF-8 conversion: ${fileBytes.size}, after conversion: ${utf8Bytes.size}")
+        return InputStreamReader(ByteArrayInputStream(utf8Bytes), StandardCharsets.UTF_8)
+    }
+
+    /**
+     * Vérifie si le fichier n'est pas un CSV
+     */
+    fun hasNotCsvFormat(file: MultipartFile) = file.contentType != "text/csv"
+
+    /**
+     * Détecte l'encodage d'un tableau de bytes avec UniversalDetector
+     */
+    private fun detectEncoding(fileBytes: ByteArray): String? {
+        val detector = UniversalDetector(null) // null listener suffit
+        detector.handleData(fileBytes, 0, fileBytes.size)
+        detector.dataEnd()
+        return detector.detectedCharset
+    }
+
+    /**
+     * Convertit les bytes d'un fichier depuis l'encodage original vers UTF-8
+     */
+    private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+        return String(file.bytes, Charset.forName(originalEncoding)).toByteArray(StandardCharsets.UTF_8)
+    }
+
+    /**
+     * Nettoie les headers Excel ajoutés automatiquement
+     */
+    fun cleanCsvHeaders(lines: List<String>): List<String> {
+        if (lines.isEmpty()) return emptyList()
+        val header = lines.first()
+        val cleanHeader = header.replace(Regex("[^\\p{ASCII}]"), "")
+        return listOf(cleanHeader) + lines.drop(1)
+    }
+}
