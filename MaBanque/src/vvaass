@@ -1,0 +1,45 @@
+object OpenCsvUtils {
+
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        val fileBytes = file.bytes
+
+        // 1️⃣ Détection de l'encodage
+        val detectedEncoding = detectEncoding(fileBytes)
+
+        // 2️⃣ Conversion éventuelle vers UTF-8
+        val utf8Bytes = if (detectedEncoding.equals("UTF-8", ignoreCase = true)) {
+            // Supprime le BOM UTF-8 si présent
+            removeBom(fileBytes)
+        } else {
+            convertToUtf8(file, originalEncoding = detectedEncoding)
+        }
+
+        // 3️⃣ Retourne un reader UTF-8 prêt pour OpenCSV
+        return InputStreamReader(ByteArrayInputStream(utf8Bytes), StandardCharsets.UTF_8)
+    }
+
+    fun hasNotCsvFormat(file: MultipartFile): Boolean {
+        val type = file.contentType ?: return true
+        return !type.contains("csv", ignoreCase = true)
+    }
+
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        val detector = UniversalDetector(null)
+        detector.handleData(fileBytes, 0, fileBytes.size)
+        detector.dataEnd()
+        return detector.detectedCharset ?: "UTF-8"
+    }
+
+    private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+        return String(file.bytes, Charset.forName(originalEncoding))
+            .toByteArray(StandardCharsets.UTF_8)
+    }
+
+    /** Supprime un éventuel BOM UTF-8 au début du fichier */
+    private fun removeBom(bytes: ByteArray): ByteArray {
+        val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+        return if (bytes.size >= 3 && bytes.sliceArray(0..2).contentEquals(bom)) {
+            bytes.copyOfRange(3, bytes.size)
+        } else bytes
+    }
+}
