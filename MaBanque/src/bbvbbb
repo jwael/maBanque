@@ -1,0 +1,76 @@
+import com.opencsv.bean.CsvToBeanBuilder
+import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
+import org.mozilla.universalchardet.UniversalDetector
+
+object OpenCsvUtils {
+
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        val fileBytes = file.bytes
+        val detectedEncoding = detectEncoding(fileBytes)
+
+        val utf8Bytes = if (detectedEncoding.equals("UTF-8", ignoreCase = true)) {
+            file.bytes
+        } else {
+            convertToUtf8(file, detectedEncoding)
+        }
+
+        return InputStreamReader(ByteArrayInputStream(utf8Bytes), StandardCharsets.UTF_8)
+    }
+
+    fun hasNotCsvFormat(file: MultipartFile) = file.contentType != "text/csv"
+
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        val detector = UniversalDetector(null)
+        detector.handleData(fileBytes, 0, fileBytes.size)
+        detector.dataEnd()
+        return detector.detectedCharset ?: "UTF-8"
+    }
+
+    private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+        return String(file.bytes, charset(originalEncoding))
+            .toByteArray(StandardCharsets.UTF_8)
+    }
+}
+
+class CaixaCsvParser {
+
+    /**
+     * Parse un CSV MultipartFile en liste de CustomerPayLoad
+     */
+    fun parse(file: MultipartFile): List<CustomerPayLoad> {
+        val reader = OpenCsvUtils.toUtf8Reader(file)
+        val allLines = reader.readLines()
+        if (allLines.isEmpty()) return emptyList()
+
+        val header = allLines.first()
+
+        return allLines.drop(1).mapIndexed { index, line ->
+            // Nettoyage automatique du séparateur pour éviter les erreurs
+            val sanitizedLine = line.replace(":", ";")
+
+            val lineReader = StringReader("$header\n$sanitizedLine")
+            runCatching {
+                val dto = CsvToBeanBuilder<CaixaCsvDto>(lineReader)
+                    .withType(CaixaCsvDto::class.java)
+                    .withSeparator(';')
+                    .withIgnoreLeadingWhiteSpace(true)
+                    .build()
+                    .parse()
+                    .firstOrNull()
+                    ?: throw IllegalArgumentException("Empty line or parsing failed")
+
+                val errors = CsvErrorRegistry.getAndClear()
+                if (errors.isNotEmpty()) {
+                    dto.copy(errorMessage = errors.joinToString(" "))
+                } else dto
+
+            }.getOrElse { e ->
+                // Capture et retourne les erreurs de parsing
+                CaixaCsvDto(errorMessage = "Error during parsing: ${e.cause?.message ?: e.message}")
+            }.mapToCustomerPayload(rowNumber = index + 1)
+        }
+    }
+}
