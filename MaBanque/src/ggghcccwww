@@ -1,0 +1,48 @@
+import org.apache.tika.parser.txt.UniversalDetector
+import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
+
+class CaixaCsvParser {
+
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        val fileBytes = file.bytes
+        val detectedEncoding = detectEncoding(fileBytes)
+        val utf8Bytes = if (detectedEncoding.equals("UTF-8", ignoreCase = true)) {
+            fileBytes
+        } else {
+            convertToUtf8(fileBytes, detectedEncoding)
+        }
+        val cleanedBytes = cleanBOM(utf8Bytes)
+        return InputStreamReader(ByteArrayInputStream(cleanedBytes), StandardCharsets.UTF_8)
+    }
+
+    fun hasNotCsvFormat(file: MultipartFile): Boolean {
+        return file.contentType != "text/csv"
+    }
+
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        val detector = UniversalDetector(null)
+        return try {
+            detector.handleData(fileBytes, 0, fileBytes.size)
+            detector.dataEnd()
+            detector.detectedCharset ?: "UTF-8"
+        } catch (_: Exception) {
+            "UTF-8"
+        } finally {
+            detector.reset()
+        }
+    }
+
+    private fun convertToUtf8(bytes: ByteArray, originalEncoding: String): ByteArray {
+        return String(bytes, Charset.forName(originalEncoding)).toByteArray(StandardCharsets.UTF_8)
+    }
+
+    private fun cleanBOM(bytes: ByteArray): ByteArray {
+        val content = String(bytes, StandardCharsets.UTF_8)
+        val cleaned = content.replace("\uFEFF", "").replace("\uFFFE", "")
+        return cleaned.toByteArray(StandardCharsets.UTF_8)
+    }
+}
