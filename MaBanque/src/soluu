@@ -1,0 +1,11 @@
+fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+    val fileBytes = file.bytes
+    val detectedEncoding = detectEncoding(fileBytes)
+    println("Detected encoding: $detectedEncoding") // debug log
+
+    // Si detection échoue, on suppose ISO-8859-1 pour Excel
+    val encodingToUse = detectedEncoding ?: "ISO-8859-1"
+    println("Using encoding: $encodingToUse") // debug log
+
+    return InputStreamReader(ByteArrayInputStream(fileBytes), Charset.forName(encodingToUse))
+}
