@@ -1,0 +1,50 @@
+import org.mozilla.universalchardet.UniversalDetector
+import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
+
+object OpenCsvUtils {
+
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        val fileBytes = file.bytes
+
+        // 🔍 Détection de l'encodage réel du fichier
+        val detectedEncoding = detectEncoding(fileBytes)
+
+        // 🔄 Conversion vers UTF-8 uniquement si nécessaire
+        val utf8Bytes = if (detectedEncoding.equals("UTF-8", ignoreCase = true)) {
+            fileBytes
+        } else {
+            convertToUtf8(file, detectedEncoding)
+        }
+
+        // 🚫 Nettoyage automatique des retours chariot parasites (Excel)
+        val cleanedBytes = String(utf8Bytes, StandardCharsets.UTF_8)
+            .lines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString("\n")
+            .toByteArray(StandardCharsets.UTF_8)
+
+        // 📖 Retourne un InputStreamReader propre en UTF-8
+        return InputStreamReader(ByteArrayInputStream(cleanedBytes), StandardCharsets.UTF_8)
+    }
+
+    fun hasNotCsvFormat(file: MultipartFile): Boolean {
+        return file.contentType != "text/csv"
+    }
+
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        val detector = UniversalDetector(null)
+        detector.handleData(fileBytes, 0, fileBytes.size)
+        detector.dataEnd()
+        return detector.detectedCharset ?: "UTF-8"
+    }
+
+    private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+        return String(file.bytes, Charset.forName(originalEncoding))
+            .toByteArray(StandardCharsets.UTF_8)
+    }
+}
