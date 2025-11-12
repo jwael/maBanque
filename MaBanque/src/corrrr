@@ -1,0 +1,86 @@
+import org.apache.tika.parser.txt.UniversalDetector
+import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
+
+class CaixaCsvParser {
+
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        System.out.println("=== Début toUtf8Reader ===")
+        val fileBytes = file.bytes
+        System.out.println("Taille du fichier: ${fileBytes.size} bytes")
+        
+        val detectedEncoding = detectEncoding(fileBytes = fileBytes)
+        System.out.println("Encodage détecté: $detectedEncoding")
+        
+        val utf8Bytes =
+            if (detectedEncoding == "UTF-8") {
+                System.out.println("Encodage déjà UTF-8, utilisation des bytes originaux")
+                file.bytes
+            } else {
+                System.out.println("Conversion nécessaire depuis $detectedEncoding vers UTF-8")
+                convertToUtf8(file = file, originalEncoding = detectedEncoding)
+            }
+        
+        val cleanedBytes = cleanExcelHeaders(utf8Bytes)
+        System.out.println("Nettoyage Excel terminé")
+            
+        System.out.println("=== Fin toUtf8Reader ===")
+        return InputStreamReader(ByteArrayInputStream(cleanedBytes), StandardCharsets.UTF_8)
+    }
+
+    fun hasNotCsvFormat(file: MultipartFile): Boolean {
+        System.out.println("Vérification format CSV - ContentType: ${file.contentType}, Filename: ${file.originalFilename}")
+        val result = file.contentType != "text/csv" && 
+                   file.contentType != "application/vnd.ms-excel" &&
+                   !file.originalFilename?.endsWith(".csv", ignoreCase = true) ?: true
+        System.out.println("Résultat vérification format: $result")
+        return result
+    }
+
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        System.out.println("Début détection encodage")
+        val detector = UniversalDetector(null)
+        try {
+            detector.handleData(fileBytes, 0, fileBytes.size)
+            detector.dataEnd()
+            val detected = detector.detectedCharset ?: "UTF-8"
+            System.out.println("Encodage détecté: $detected")
+            return detected
+        } catch (e: Exception) {
+            System.out.println("Erreur détection: ${e.message}")
+            return "UTF-8"
+        } finally {
+            detector.reset()
+        }
+    }
+
+    private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+        System.out.println("Conversion de $originalEncoding vers UTF-8")
+        return String(file.bytes, Charset.forName(originalEncoding))
+            .toByteArray(StandardCharsets.UTF_8)
+    }
+
+    private fun cleanExcelHeaders(bytes: ByteArray): ByteArray {
+        System.out.println("Début nettoyage headers Excel")
+        val content = String(bytes, StandardCharsets.UTF_8)
+        
+        var cleanedContent = content
+            .replace("\uFEFF", "")
+            .replace("\uFFFE", "")  
+            .replace("ï»¿", "")
+            .trim()
+        
+        val excelHeaders = listOf("sep=.*?\n")
+        excelHeaders.forEach { pattern ->
+            cleanedContent = cleanedContent.replace(Regex(pattern), "")
+        }
+        
+        cleanedContent = cleanedContent.trimStart()
+        System.out.println("Fin nettoyage headers Excel")
+        
+        return cleanedContent.toByteArray(StandardCharsets.UTF_8)
+    }
+}
