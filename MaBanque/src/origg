@@ -1,0 +1,37 @@
+fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+    val fileBytes = file.bytes
+    println("Byte size of uploaded file: ${fileBytes.size}")
+
+    val detectedEncoding = detectEncoding(fileBytes)
+    println("Detected encoding: $detectedEncoding")
+
+    // Convert file bytes to UTF-8 if needed
+    val utf8Bytes = if (detectedEncoding == "UTF-8") {
+        println("No conversion needed, already UTF-8")
+        file.bytes
+    } else {
+        println("Converting file from $detectedEncoding to UTF-8")
+        convertToUtf8(file, originalEncoding = detectedEncoding)
+    }
+
+    println("Byte size before UTF-8 conversion: ${fileBytes.size}, after conversion: ${utf8Bytes.size}")
+
+    return InputStreamReader(ByteArrayInputStream(utf8Bytes), StandardCharsets.UTF_8)
+}
+
+fun hasNotCsvFormat(file: MultipartFile) = file.contentType != "text/csv"
+
+private fun detectEncoding(fileBytes: ByteArray): String {
+    val detector = UniversalDetector(listener = null)
+    detector.handleData(fileBytes, 0, fileBytes.size)
+    detector.dataEnd()
+    val charset = detector.detectedCharset ?: "UTF-8"
+    println("UniversalDetector detected charset: ${detector.detectedCharset}")
+    return charset
+}
+
+private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+    val converted = String(file.bytes, Charset.forName(originalEncoding)).toByteArray(StandardCharsets.UTF_8)
+    println("Conversion done, byte size: ${converted.size}")
+    return converted
+}
