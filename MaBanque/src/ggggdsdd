@@ -1,0 +1,53 @@
+import org.apache.tika.parser.txt.UniversalDetector
+import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
+
+class CaixaCsvParser {
+
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        val detectedEncoding = detectEncoding(fileBytes = file.bytes)
+        // Correction : plus besoin de nommer le paramètre
+        // val detectedEncoding = detectEncoding(file.bytes)
+
+        val utf8Bytes =
+            if (detectedEncoding == "UTF-8") file.bytes
+            else convertToUtf8(file, originalEncoding = detectedEncoding)
+            // Correction : originalEncoding passe directement
+            // else convertToUtf8(file, detectedEncoding)
+
+        return InputStreamReader(
+            in = ByteArrayInputStream(buf = utf8Bytes),
+            // Correction : nommer explicitement les paramètres n'est pas nécessaire
+            // ByteArrayInputStream(utf8Bytes), StandardCharsets.UTF_8
+            cs = StandardCharsets.UTF_8
+        )
+    }
+
+    fun hasNotCsvFormat(file: MultipartFile) = file.contentType != "text/csv"
+
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        val detector = UniversalDetector(listener = null)
+        // Correction : enlever le paramètre nommé
+        // val detector = UniversalDetector(null)
+
+        detector.handleData(buf = fileBytes, offset = 0, length = fileBytes.size)
+        // Correction : utiliser les bons paramètres sans noms
+        // detector.handleData(fileBytes, 0, fileBytes.size)
+
+        detector.dataEnd()
+        return detector.detectedCharset ?: "UTF-8"
+        // Correction : ajouter fallback UTF-8 pour éviter null
+        // return detector.detectedCharset ?: "UTF-8"
+    }
+
+    private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+        return String(bytes = file.bytes, Charset.forName(charsetName = originalEncoding))
+            .toByteArray(charset = StandardCharsets.UTF_8)
+        // Correction : enlever nommage des paramètres
+        // return String(file.bytes, Charset.forName(originalEncoding))
+        //     .toByteArray(StandardCharsets.UTF_8)
+    }
+}
