@@ -1,0 +1,40 @@
+package com.arval.bim.infrastructure.driving.rest.contacts.parser
+
+import com.arval.bim.infrastructure.driving.rest.contacts.dto.ContactCsvDto
+import com.arval.bim.infrastructure.driving.rest.contacts.dto.ContactPayload
+import com.arval.bim.infrastructure.driving.rest.common.OpenCsvUtils
+import com.arval.bim.infrastructure.driving.rest.contacts.dto.mapToContactPayload
+import com.arval.bim.infrastructure.driving.rest.contacts.error.CsvErrorRegistry
+import com.opencsv.bean.CsvToBeanBuilder
+import org.springframework.web.multipart.MultipartFile
+
+object ContactsvParser {
+
+    fun parse(file: MultipartFile): List<ContactPayload> {
+        // Lire le flux UTF-8
+        val reader = OpenCsvUtils.toUtf8Reader(file)
+
+        // Parse complet avec OpenCSV
+        val csvToBean = CsvToBeanBuilder<ContactCsvDto>(reader)
+            .withType(ContactCsvDto::class.java)
+            .withSeparator(';')
+            .withIgnoreLeadingWhiteSpace(true)
+            .build()
+
+        val dtos = csvToBean.parse()
+
+        // Affichage debug ligne par ligne
+        dtos.forEachIndexed { index, dto ->
+            println(">>> [DEBUG DTO] Ligne ${index + 2} = $dto") // index+2 = numéro réel ligne CSV
+        }
+
+        // Mapper DTO vers ContactPayload
+        return dtos.mapIndexed { index, dto ->
+            val errors = CsvErrorRegistry.getAndClear()
+            val dtoWithErrors = if (errors.isNotEmpty()) {
+                dto.copy(errorMessage = errors.joinToString(" "))
+            } else dto
+            dtoWithErrors.mapToContactPayload(rowNumber = index + 2)
+        }
+    }
+}
