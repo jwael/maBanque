@@ -1,0 +1,56 @@
+import org.mozilla.universalchardet.UniversalDetector
+import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
+
+object OpenCsvUtils {
+
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        println(">>> [DEBUG] Début toUtf8Reader, fichier = ${file.originalFilename}")
+
+        val detectedEncoding = detectEncoding(file.bytes)
+        println(">>> [DEBUG] Charset final détecté = $detectedEncoding")
+
+        val utf8Bytes = if (detectedEncoding.equals("UTF-8", ignoreCase = true)) {
+            println(">>> [DEBUG] Fichier déjà en UTF-8, pas de conversion nécessaire")
+            file.bytes
+        } else {
+            println(">>> [DEBUG] Conversion du fichier de $detectedEncoding vers UTF-8")
+            convertToUtf8(file, detectedEncoding)
+        }
+
+        // Vérifier BOM
+        val hasBOM = utf8Bytes.size >= 3 && utf8Bytes[0] == 0xEF.toByte() && utf8Bytes[1] == 0xBB.toByte() && utf8Bytes[2] == 0xBF.toByte()
+        println(">>> [DEBUG] BOM détecté = $hasBOM")
+
+        if (hasBOM) {
+            println(">>> [DEBUG] Suppression du BOM")
+            return InputStreamReader(ByteArrayInputStream(utf8Bytes.drop(3).toByteArray()), StandardCharsets.UTF_8)
+        }
+
+        println(">>> [DEBUG] Taille du flux = ${utf8Bytes.size}")
+        println(">>> [DEBUG] Aperçu des 100 premiers caractères du flux = ${String(utf8Bytes, 0, utf8Bytes.size.coerceAtMost(100), StandardCharsets.UTF_8)}")
+
+        return InputStreamReader(ByteArrayInputStream(utf8Bytes), StandardCharsets.UTF_8)
+    }
+
+    fun hasNotCsvFormat(file: MultipartFile) = file.contentType != "text/csv"
+
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        val detector = UniversalDetector(null)
+        detector.handleData(fileBytes, 0, fileBytes.size)
+        detector.dataEnd()
+        val charset = detector.detectedCharset ?: "UTF-8"
+        println(">>> [DEBUG] detectEncoding -> Charset détecté : $charset")
+        return charset
+    }
+
+    private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+        println(">>> [DEBUG] convertToUtf8: originalEncoding = $originalEncoding, taille originale = ${file.bytes.size}")
+        val converted = String(file.bytes, Charset.forName(originalEncoding)).toByteArray(StandardCharsets.UTF_8)
+        println(">>> [DEBUG] convertToUtf8: taille après conversion = ${converted.size}")
+        return converted
+    }
+}
