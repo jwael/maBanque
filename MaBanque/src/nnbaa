@@ -1,0 +1,54 @@
+import org.apache.tika.parser.txt.UniversalDetector
+import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
+
+object OpenCsvUtils {
+
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        println(">>> [DEBUG] Début toUtf8Reader, fichier = ${file.originalFilename}")
+
+        val detectedEncoding = detectEncoding(file.bytes)
+        println(">>> [DEBUG] detectedEncoding = $detectedEncoding")
+
+        // Convert file bytes to UTF-8 si besoin
+        val utf8Bytes = if (detectedEncoding == "UTF-8") {
+            println(">>> [DEBUG] Fichier déjà UTF-8, taille = ${file.bytes.size}")
+            file.bytes
+        } else {
+            println(">>> [DEBUG] Conversion nécessaire de $detectedEncoding vers UTF-8")
+            convertToUtf8(file, detectedEncoding)
+        }
+
+        val fileContent = String(utf8Bytes, StandardCharsets.UTF_8)
+        println(">>> [DEBUG] Premier 200 caractères du flux UTF-8 :")
+        println(fileContent.take(200).replace("\uFEFF", "[BOM]"))
+
+        // Inspecter et nettoyer la première ligne pour debug
+        val firstLine = fileContent.lines().firstOrNull()?.trim() ?: ""
+        val columns = firstLine.split(";").map { it.trim() }
+        println(">>> [DEBUG] Colonnes détectées = $columns")
+
+        return InputStreamReader(ByteArrayInputStream(utf8Bytes), StandardCharsets.UTF_8)
+    }
+
+    fun hasNotsvFormat(file: MultipartFile) = file.contentType != "text/csv"
+
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        val detector = UniversalDetector(null)
+        detector.handleData(fileBytes, 0, fileBytes.size)
+        detector.dataEnd()
+        val detected = detector.detectedCharset ?: "UTF-8"
+        println(">>> [DEBUG] detectEncoding -> Charset détecté : $detected")
+        return detected
+    }
+
+    private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+        val text = String(file.bytes, Charset.forName(originalEncoding))
+        println(">>> [DEBUG] convertToUtf8 -> Premier 100 caractères :")
+        println(text.take(100).replace("\uFEFF", "[BOM]"))
+        return text.toByteArray(StandardCharsets.UTF_8)
+    }
+}
