@@ -1,0 +1,36 @@
+fun toCleanUtf8Reader(file: MultipartFile): StringReader {
+    // 1. Détection de l'encodage
+    val detectedEncoding = detectEncoding(file.bytes)
+    println("[DEBUG] Charset détecté : $detectedEncoding")
+
+    // 2. Conversion en UTF-8 si nécessaire
+    val utf8Bytes = if (detectedEncoding.equals("UTF-8", ignoreCase = true)) {
+        file.bytes
+    } else {
+        convertToUtf8(file, detectedEncoding)
+    }
+
+    // 3. Création du flux et suppression du BOM
+    val rawText = utf8Bytes.toString(Charsets.UTF_8)
+    val textWithoutBOM = rawText.removePrefix("\uFEFF")
+    println("[DEBUG] Fichier après suppression BOM (100 premiers caractères) : ${textWithoutBOM.take(100)}")
+
+    // 4. Séparer header et lignes
+    val lines = textWithoutBOM.lines().filter { it.isNotBlank() }
+    if (lines.isEmpty()) throw IllegalArgumentException("CSV vide")
+
+    // Nettoyage du header
+    val cleanHeader = lines.first().split(";").map { it.trim().replace(Regex("[^\\p{ASCII}]"), "") }
+        .joinToString(";")
+    println("[DEBUG] Header nettoyé : $cleanHeader")
+
+    // Nettoyage des lignes
+    val cleanLines = lines.drop(1).map { line ->
+        line.split(";").map { it.trim().replace(Regex("[^\\p{ASCII}]"), "") }.joinToString(";")
+    }
+    println("[DEBUG] Nombre de lignes nettoyées : ${cleanLines.size}")
+
+    // Recréer CSV complet pour OpenCSV
+    val cleanedCsv = (listOf(cleanHeader) + cleanLines).joinToString("\n")
+    return StringReader(cleanedCsv)
+}
