@@ -1,0 +1,23 @@
+fun toUtf8Reader(file: MultipartFile): BufferedReader {
+    val detectedEncoding = detectEncoding(fileBytes = file.bytes)
+    val utf8Bytes = if (detectedEncoding == "UTF-8") {
+        file.bytes
+    } else {
+        convertToUtf8(file, originalEncoding = detectedEncoding)
+    }
+
+    val inputStream = ByteArrayInputStream(utf8Bytes)
+    val reader = InputStreamReader(inputStream, StandardCharsets.UTF_8)
+    val buffered = BufferedReader(reader)
+
+    // Vérifie et consomme le BOM si présent
+    buffered.mark(1)
+    val firstChar = buffered.read()
+    if (firstChar != 0xFEFF) {
+        buffered.reset() // remet le curseur au début si pas de BOM
+    } else {
+        println("[DEBUG] BOM détecté et supprimé")
+    }
+
+    return buffered
+}
