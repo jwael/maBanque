@@ -1,0 +1,20 @@
+val header = allLines.first().removePrefix("\uFEFF")
+val headerCol = header.split(";").map { it.trim() }
+
+println("HEADER BRUT = '$header'")
+println("HEADER CODEPOINTS = ${header.toCharArray().map { it.code }.joinToString(", ")}")
+println("HEADER COLS = $headerCol")
+headerCol.forEach { 
+    println("COL = '$it' | CODES = ${it.toCharArray().map { c -> c.code }.joinToString(", ")}")
+}
+
+// Juste avant le parse, pour vérifier la ligne que tu traites
+allLines.drop(1).forEachIndexed { index, line ->
+    val values = line.split(";")
+    println("LINE $index RAW = '$line'")
+    println("LINE $index SPLIT = ${values.map { "'$it'" }}")
+    println("LINE $index SIZE = ${values.size}")
+    // Si tu connais l'index exact de EMPLOYEE_NUMBER dans headerCol
+    val idx = headerCol.indexOf("EMPLOYEE_NUMBER")
+    if (idx >= 0) println("INDEX employeeNumber = '$idx', valeur = '${values[idx]}'")
+}
