@@ -1,0 +1,35 @@
+fun toUtf8Reader(file: MultipartFile): Reader {
+    println("[DEBUG] Début toUtf8Reader pour ${file.originalFilename}")
+
+    val detectedEncoding = detectEncoding(file.bytes)
+    println("[DEBUG] Charset détecté = $detectedEncoding")
+
+    val bytes = if (detectedEncoding.equals("UTF-8", ignoreCase = true)) {
+        file.bytes
+    } else {
+        println("[DEBUG] Conversion en UTF-8")
+        convertToUtf8(file, detectedEncoding)
+    }
+
+    val inputStream = ByteArrayInputStream(bytes)
+    val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
+
+    // Vérifie et consomme le BOM si présent
+    reader.mark(1)
+    val firstChar = reader.read()
+    if (firstChar == 0xFEFF) {
+        println("[DEBUG] BOM détecté et supprimé")
+    } else {
+        println("[DEBUG] Pas de BOM détecté, premier caractère = ${firstChar.toChar()}")
+        reader.reset()
+    }
+
+    // Aperçu des 100 premiers caractères pour debug
+    reader.mark(100)
+    val preview = CharArray(100)
+    val readCount = reader.read(preview, 0, 100)
+    println("[DEBUG] Aperçu flux = ${String(preview, 0, readCount)}")
+    reader.reset()
+
+    return reader
+}
