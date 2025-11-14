@@ -1,0 +1,47 @@
+import org.apache.tika.parser.txt.UniversalDetector
+import org.springframework.web.multipart.MultipartFile
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
+
+object OpenCsvUtils {
+
+    fun toUtf8Reader(file: MultipartFile): InputStreamReader {
+        val detectedEncoding = detectEncoding(file.bytes)
+        println("[DEBUG] detectEncoding -> Charset détecté : $detectedEncoding")
+
+        // Convert file bytes to UTF-8 if needed
+        val utf8Bytes = if (detectedEncoding == "UTF-8") {
+            file.bytes
+        } else {
+            convertToUtf8(file, originalEncoding = detectedEncoding)
+        }
+
+        println("[DEBUG] Charset final utilisé = UTF-8")
+        println("[DEBUG] Taille du flux = ${utf8Bytes.size}")
+
+        // Crée le reader et nettoie le BOM si présent
+        val reader = InputStreamReader(ByteArrayInputStream(utf8Bytes), StandardCharsets.UTF_8)
+        val firstChar = reader.read()
+        if (firstChar != 0xFEFF) {
+            // Pas de BOM, on repositionne au début
+            reader.reset()
+        } else {
+            println("[DEBUG] BOM détecté et supprimé")
+        }
+
+        return reader
+    }
+
+    private fun detectEncoding(fileBytes: ByteArray): String {
+        val detector = UniversalDetector(null)
+        detector.handleData(fileBytes, 0, fileBytes.size)
+        detector.dataEnd()
+        return detector.detectedCharset ?: "UTF-8"
+    }
+
+    private fun convertToUtf8(file: MultipartFile, originalEncoding: String): ByteArray {
+        println("[DEBUG] Conversion en UTF-8 depuis $originalEncoding")
+        return String(file.bytes, charset(originalEncoding)).toByteArray(StandardCharsets.UTF_8)
+    }
+}
